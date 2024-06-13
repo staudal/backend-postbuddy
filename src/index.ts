@@ -276,6 +276,7 @@ app.post('/shopify-bulk-query-finished', async (req, res) => {
   }
 });
 
+
 const loadUserWithShopifyIntegration = async (userId: string) => {
   return await prisma.user.findUnique({
     where: { id: userId },
@@ -331,25 +332,28 @@ const fetchBulkOperationData = async (url: string) => {
   const reader = orderResponse.body.getReader();
   const decoder = new TextDecoder();
   let orders: Order[] = [];
+  let responseBody = '';
 
   while (true) {
     const { done, value } = await reader.read();
+    responseBody += decoder.decode(value, { stream: !done });
+
     if (done) break;
+  }
 
-    const responseBody = decoder.decode(value, { stream: true });
-    const lines = responseBody.trim().split('\n');
+  const lines = responseBody.trim().split('\n');
 
-    for (const line of lines) {
-      if (line) {
-        try {
-          const order: Order = JSON.parse(line);
-          orders.push(order);
-        } catch (error) {
-          console.error("Failed to parse line as JSON:", line, error);
-        }
+  for (const line of lines) {
+    if (line) {
+      try {
+        const order: Order = JSON.parse(line);
+        orders.push(order);
+      } catch (error) {
+        console.error("Failed to parse line as JSON:", line, error);
       }
     }
   }
+
   return orders;
 };
 
