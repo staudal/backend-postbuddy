@@ -421,7 +421,7 @@ const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any[]) => 
 
         if (existingDbOrder) {
           console.log(`Order ${allOrder.id} is already associated with profile ${profile.id}`);
-          return;
+          continue;
         }
 
         // Update the order to connect with the profileId
