@@ -264,13 +264,9 @@ app.post('/shopify-bulk-query-finished', async (req, res) => {
 
     const orders = await fetchBulkOperationData(url);
 
-    const newOrders = await filterAndSaveOrders(user.id, orders);
+    await saveOrders(user.id, orders);
 
-    if (newOrders.length === 0) {
-      return res.status(200).json({ message: "No new orders found" });
-    }
-
-    await processOrdersForCampaigns(user, newOrders);
+    await processOrdersForCampaigns(user, orders);
 
     return res.status(200).json({ message: "ok" });
 
@@ -362,7 +358,7 @@ const fetchBulkOperationData = async (url: string) => {
   return orders;
 };
 
-const filterAndSaveOrders = async (userId: string, orders: Order[]) => {
+const saveOrders = async (userId: string, orders: Order[]) => {
   const savedOrders = await prisma.order.findMany({
     where: {
       user_id: userId,
@@ -402,9 +398,16 @@ const findAndUpdateProfile = async (order: Order, campaigns: any[]) => {
     if (orderCreatedAt >= campaignStartDate && orderCreatedAt <= campaignEndDate) {
       const profile = await prisma.profile.findFirst({
         where: buildProfileWhereClause(order, campaign.segment_id),
+        include: { orders: true },
       });
 
       if (profile) {
+
+        // if the order is already connected to the profile, skip
+        if (profile.orders.some((profileOrder) => profileOrder.order_id === order.id)) {
+          return;
+        }
+
         await prisma.profile.update({
           where: { id: profile.id },
           data: { orders: { connect: { id: order.id } } },
