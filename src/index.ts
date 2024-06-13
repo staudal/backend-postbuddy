@@ -398,6 +398,7 @@ const findAndUpdateProfile = async (shopifyOrder: Order, campaigns: any[]) => {
     const shopifyOrderCreatedAt = new Date(shopifyOrder.createdAt);
 
     if (shopifyOrderCreatedAt >= campaignStartDate && shopifyOrderCreatedAt <= campaignEndDate) {
+      console.log(`Order ${shopifyOrder.id} falls within campaign ${campaign.id} date range`);
 
       const profile = await prisma.profile.findFirst({
         where: buildProfileWhereClause(shopifyOrder, campaign.segment_id),
@@ -405,19 +406,18 @@ const findAndUpdateProfile = async (shopifyOrder: Order, campaigns: any[]) => {
       });
 
       if (profile) {
-        if (profile.orders.some((profileOrder) => profileOrder.order_id === shopifyOrder.id)) {
-          return;
-        }
-
-        console.log(`Order ${shopifyOrder.id} falls within campaign ${campaign.id} date range`);
         const existingDbOrder = await prisma.order.findFirst({
           where: {
             order_id: shopifyOrder.id,
-          }
+          },
+          include: { profile: true },
         });
 
         if (!existingDbOrder) {
           console.log("The order has not been created in the database yet");
+          return;
+        } else if (existingDbOrder.profile_id) {
+          console.log(`Order ${existingDbOrder.id} is already associated with a profile`);
           return;
         }
 

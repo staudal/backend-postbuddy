@@ -95,24 +95,24 @@ model Campaign {
 }
 
 model Profile {
-  id              String    @id @default(cuid())
+  id              String         @id @default(cuid())
   first_name      String
   last_name       String
   address         String
   city            String
   zip_code        String
-  in_robinson     Boolean   @default(false)
+  in_robinson     Boolean        @default(false)
   segment_id      String
-  letter_sent     Boolean   @default(false)
-  revenue         Float     @default(0)
+  letter_sent     Boolean        @default(false)
+  revenue         Float          @default(0)
   klaviyo_id      String?
   letter_sent_at  DateTime?
   email           String
-  country         String    @default("Denmark")
+  country         String         @default("Denmark")
   custom_variable String?
-  demo            Boolean   @default(false)
-  orders          Order[]
-  segment         Segment   @relation(fields: [segment_id], references: [id])
+  demo            Boolean        @default(false)
+  orders          OrderProfile[]
+  segment         Segment        @relation(fields: [segment_id], references: [id])
 
   @@index([segment_id])
   @@map("profiles")
@@ -144,8 +144,8 @@ model Subscription {
 }
 
 model Order {
-  id             String   @id @default(cuid())
-  created_at     DateTime @default(now())
+  id             String         @id @default(cuid())
+  created_at     DateTime       @default(now())
   order_id       String
   user_id        String
   amount         Float
@@ -155,11 +155,20 @@ model Order {
   email          String
   address        String
   zip_code       String
-  profile_id     String? // Ensure this field is nullable
-  profile        Profile? @relation(fields: [profile_id], references: [id])
-  user           User     @relation(fields: [user_id], references: [id])
+  profiles       OrderProfile[]
+  user           User           @relation(fields: [user_id], references: [id])
 
   @@map("orders")
+}
+
+model OrderProfile {
+  orderId   String  @map("order_id")
+  order     Order   @relation(fields: [orderId], references: [id])
+  profileId String  @map("profile_id")
+  profile   Profile @relation(fields: [profileId], references: [id])
+
+  @@id([orderId, profileId])
+  @@map("orders_profiles")
 }
 
 model ProcessedOrder {
