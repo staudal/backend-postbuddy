@@ -155,7 +155,7 @@ model Order {
   email          String
   address        String
   zip_code       String
-  profile_id     String?
+  profile_id     String? // Ensure this field is nullable
   profile        Profile? @relation(fields: [profile_id], references: [id])
   user           User     @relation(fields: [user_id], references: [id])
 

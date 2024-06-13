@@ -391,36 +391,38 @@ const processOrdersForCampaigns = async (user: any, orders: any[]) => {
 const findAndUpdateProfile = async (order: Order, campaigns: any[]) => {
   for (const campaign of campaigns) {
     console.log(`Processing order ${order.id} for campaign ${campaign.id}`);
+
     const campaignStartDate = new Date(campaign.start_date);
-    console.log(`Campaign start date: ${campaignStartDate}`);
-    const campaignEndDate = new Date(campaignStartDate); // Clone the start date
+    const campaignEndDate = new Date(campaignStartDate);
     campaignEndDate.setDate(campaignEndDate.getDate() + 60);
-    console.log(`Campaign end date: ${campaignEndDate}`);
 
     const orderCreatedAt = new Date(order.createdAt);
-    console.log(`Order created at: ${orderCreatedAt}`);
+
     if (orderCreatedAt >= campaignStartDate && orderCreatedAt <= campaignEndDate) {
       console.log(`Order ${order.id} falls within campaign ${campaign.id} date range`);
+
       const profile = await prisma.profile.findFirst({
         where: buildProfileWhereClause(order, campaign.segment_id),
         include: { orders: true },
       });
 
       if (profile) {
-        // if the order is already connected to the profile, skip
         if (profile.orders.some((profileOrder) => profileOrder.order_id === order.id)) {
           return;
         }
 
-        await prisma.profile.update({
-          where: { id: profile.id },
-          data: { orders: { connect: { id: order.id } } },
+        // Update the order to connect with the profileId
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { profile_id: profile.id }, // Associate the order with the profile_id
         });
+
         console.log(`Updated profile for order ${order.id}`);
       }
     }
   }
 };
+
 
 
 const buildProfileWhereClause = (order: Order, segmentId: string) => {
