@@ -405,34 +405,37 @@ const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any[]) => 
     if (shopifyOrderCreatedAt >= campaignStartDate && shopifyOrderCreatedAt <= campaignEndDate) {
       console.log(`Order ${allOrder.id} falls within campaign ${campaign.id} date range`);
 
-      const profile = await prisma.profile.findFirst({
+      const profiles = await prisma.profile.findMany({
         where: buildProfileWhereClause(allOrder, campaign.segment_id),
         include: { orders: true },
       });
 
-      if (profile) {
-        // check if the profile has already been associated with the order
-        const existingDbOrder = await prisma.orderProfile.findFirst({
-          where: {
-            order_id: allOrder.id,
-            profile_id: profile.id,
+      if (profiles.length > 0) {
+        // check if the profiles has already been associated with the order
+
+        for (const profile of profiles) {
+          const existingDbOrder = await prisma.orderProfile.findFirst({
+            where: {
+              order_id: allOrder.id,
+              profile_id: profile.id,
+            }
+          });
+
+          if (existingDbOrder) {
+            console.log(`Order ${allOrder.id} is already associated with profile ${profile.id}`);
+            continue;
           }
-        });
 
-        if (existingDbOrder) {
-          console.log(`Order ${allOrder.id} is already associated with profile ${profile.id}`);
-          continue;
+          // Update the order to connect with the profileId
+          await prisma.orderProfile.create({
+            data: {
+              order_id: allOrder.id,
+              profile_id: profile.id,
+            },
+          });
+
+          console.log(`Updated profile for order ${allOrder.id}`);
         }
-
-        // Update the order to connect with the profileId
-        await prisma.orderProfile.create({
-          data: {
-            order_id: allOrder.id,
-            profile_id: profile.id,
-          },
-        });
-
-        console.log(`Updated profile for order ${allOrder.id}`);
       }
     }
   }
