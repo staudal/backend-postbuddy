@@ -413,6 +413,8 @@ const findAndUpdateProfile = async (order: Order, campaigns: any[]) => {
           data: { orders: { connect: { id: order.id } } },
         });
       }
+
+      console.log(`Updated profile for order ${order.id}`);
     }
   }
 };
