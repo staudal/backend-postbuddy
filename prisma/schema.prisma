@@ -162,12 +162,12 @@ model Order {
 }
 
 model OrderProfile {
-  orderId   String  @map("order_id")
-  order     Order   @relation(fields: [orderId], references: [id])
-  profileId String  @map("profile_id")
-  profile   Profile @relation(fields: [profileId], references: [id])
+  order_id   String  @map("order_id")
+  order      Order   @relation(fields: [order_id], references: [id])
+  profile_id String  @map("profile_id")
+  profile    Profile @relation(fields: [profile_id], references: [id])
 
-  @@id([orderId, profileId])
+  @@id([order_id, profile_id])
   @@map("orders_profiles")
 }
 

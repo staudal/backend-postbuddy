@@ -406,28 +406,28 @@ const findAndUpdateProfile = async (shopifyOrder: Order, campaigns: any[]) => {
       });
 
       if (profile) {
-        const existingDbOrder = await prisma.order.findFirst({
+        // check if the profile has already been associated with the order
+        const existingDbOrder = await prisma.orderProfile.findFirst({
           where: {
             order_id: shopifyOrder.id,
-          },
-          include: { profile: true },
+            profile_id: profile.id,
+          }
         });
 
-        if (!existingDbOrder) {
-          console.log("The order has not been created in the database yet");
-          return;
-        } else if (existingDbOrder.profile_id) {
-          console.log(`Order ${existingDbOrder.id} is already associated with a profile`);
+        if (existingDbOrder) {
+          console.log(`Order ${shopifyOrder.id} is already associated with profile ${profile.id}`);
           return;
         }
 
         // Update the order to connect with the profileId
-        await prisma.order.update({
-          where: { id: existingDbOrder.id },
-          data: { profile_id: profile.id }, // Associate the order with the profile_id
+        await prisma.orderProfile.create({
+          data: {
+            order_id: shopifyOrder.id,
+            profile_id: profile.id,
+          },
         });
 
-        console.log(`Updated profile for order ${existingDbOrder.id}`);
+        console.log(`Updated profile for order ${shopifyOrder.id}`);
       }
     }
   }
