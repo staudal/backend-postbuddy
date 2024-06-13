@@ -390,12 +390,16 @@ const processOrdersForCampaigns = async (user: any, orders: any[]) => {
 
 const findAndUpdateProfile = async (order: Order, campaigns: any[]) => {
   for (const campaign of campaigns) {
+    console.log(`Processing order ${order.id} for campaign ${campaign.id}`);
     const campaignStartDate = new Date(campaign.start_date);
+    console.log(`Campaign start date: ${campaignStartDate}`);
     const campaignEndDate = new Date(campaignStartDate);
+    console.log(`Campaign end date: ${campaignEndDate}`);
     campaignEndDate.setDate(campaignEndDate.getDate() + 60);
 
     const orderCreatedAt = new Date(order.createdAt);
     if (orderCreatedAt >= campaignStartDate && orderCreatedAt <= campaignEndDate) {
+      console.log(`Order ${order.id} falls within campaign ${campaign.id} date range`);
       const profile = await prisma.profile.findFirst({
         where: buildProfileWhereClause(order, campaign.segment_id),
         include: { orders: true },
@@ -412,9 +416,8 @@ const findAndUpdateProfile = async (order: Order, campaigns: any[]) => {
           where: { id: profile.id },
           data: { orders: { connect: { id: order.id } } },
         });
+        console.log(`Updated profile for order ${order.id}`);
       }
-
-      console.log(`Updated profile for order ${order.id}`);
     }
   }
 };
