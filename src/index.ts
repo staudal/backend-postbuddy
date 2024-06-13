@@ -14,6 +14,7 @@ app.listen(3000, () =>
 
 // ENDPOINT TO TRIGGER SHOPIFY BULK QUERY
 app.get('/shopify-bulk-query-trigger', async (req, res) => {
+  console.log("HIT: /shopify-bulk-query-trigger")
   const users = await prisma.user.findMany({
     where: {
       integrations: {
@@ -126,6 +127,8 @@ app.get('/shopify-bulk-query-trigger', async (req, res) => {
 });
 
 app.post('/shopify-bulk-query-trigger-user', async (req, res) => {
+  console.log("HIT: /shopify-bulk-query-trigger-user")
+  console.log("HIT: /shopify-bulk-query-trigger-user")
   const { user_id } = req.body;
 
   if (!user_id) {
@@ -233,6 +236,7 @@ app.post('/shopify-bulk-query-trigger-user', async (req, res) => {
 });
 
 app.post('/shopify-bulk-query-finished', async (req, res) => {
+  console.log("HIT: /shopify-bulk-query-finished")
   const { admin_graphql_api_id } = req.body;
   const shop = req.query.shop as string;
   const state = req.query.state as string;
