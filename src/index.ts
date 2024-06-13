@@ -398,7 +398,6 @@ const findAndUpdateProfile = async (shopifyOrder: Order, campaigns: any[]) => {
     const shopifyOrderCreatedAt = new Date(shopifyOrder.createdAt);
 
     if (shopifyOrderCreatedAt >= campaignStartDate && shopifyOrderCreatedAt <= campaignEndDate) {
-      console.log(`Order ${shopifyOrder.id} falls within campaign ${campaign.id} date range`);
 
       const profile = await prisma.profile.findFirst({
         where: buildProfileWhereClause(shopifyOrder, campaign.segment_id),
@@ -410,6 +409,7 @@ const findAndUpdateProfile = async (shopifyOrder: Order, campaigns: any[]) => {
           return;
         }
 
+        console.log(`Order ${shopifyOrder.id} falls within campaign ${campaign.id} date range`);
         const existingDbOrder = await prisma.order.findFirst({
           where: {
             order_id: shopifyOrder.id,
