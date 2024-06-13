@@ -17,11 +17,10 @@ app.listen(3000, () =>
 cron.schedule('0 0 * * *', triggerShopifyBulkQueries)
 
 app.post('/shopify-bulk-query-trigger-user', async (req, res) => {
-  console.log("HIT: /shopify-bulk-query-trigger-user")
-  console.log("HIT: /shopify-bulk-query-trigger-user")
   const { user_id } = req.body;
 
   if (!user_id) {
+    console.error('Missing user_id in request body');
     return res.status(400).send('Missing user_id in request body');
   }
 
@@ -34,6 +33,7 @@ app.post('/shopify-bulk-query-trigger-user', async (req, res) => {
   });
 
   if (!user) {
+    console.error(`User not found for user_id: ${user_id}`);
     return res.status(404).send(`User not found for user_id: ${user_id}`);
   }
 
@@ -42,6 +42,7 @@ app.post('/shopify-bulk-query-trigger-user', async (req, res) => {
   );
 
   if (!shopifyIntegration || !shopifyIntegration.token) {
+    console.error(`User ${user.id} does not have a valid Shopify integration`);
     return res.status(400).send(`User ${user.id} does not have a valid Shopify integration`);
   }
 
@@ -132,6 +133,7 @@ app.post('/shopify-bulk-query-finished', async (req, res) => {
   const state = req.query.state as string;
 
   if (!admin_graphql_api_id || !shop || !state) {
+    console.error('Missing required parameters');
     return res.status(400).send('Missing required parameters');
   }
 
@@ -139,6 +141,7 @@ app.post('/shopify-bulk-query-finished', async (req, res) => {
     const user = await loadUserWithShopifyIntegration(state);
 
     if (!user) {
+      console.error('User not found');
       return res.status(404).send('User not found');
     }
 
@@ -161,9 +164,7 @@ app.post('/shopify-bulk-query-finished', async (req, res) => {
     });
 
     await processOrdersForCampaigns(user, allOrders);
-
     return res.status(200).json({ message: "ok" });
-
   } catch (error) {
     console.error("Error processing bulk query finished:", error);
     return res.status(500).json({ error: "Internal server error" });
