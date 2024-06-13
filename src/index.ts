@@ -323,6 +323,7 @@ const getBulkOperationUrl = async (shop: string, token: string, apiId: string) =
     throw new Error('Failed to retrieve bulk operation data URL');
   }
 
+  console.log(`Bulk operation URL: ${data.data.node.url}`);
   return data.data.node.url;
 };
 
@@ -380,12 +381,14 @@ const filterAndSaveOrders = async (userId: string, orders: Order[]) => {
     });
   }
 
+  console.log(`Saved ${newOrders.length} new orders`);
   return newOrders;
 };
 
 const processOrdersForCampaigns = async (user: any, orders: any[]) => {
   const campaigns = user.campaigns;
   const profilePromises = orders.map(order => findAndUpdateProfile(order, campaigns));
+  console.log(`Processing ${profilePromises.length} orders for ${campaigns.length} campaigns`);
   return await Promise.all(profilePromises);
 };
 
