@@ -111,8 +111,8 @@ model Profile {
   country         String    @default("Denmark")
   custom_variable String?
   demo            Boolean   @default(false)
-  segment         Segment   @relation(fields: [segment_id], references: [id])
   orders          Order[]
+  segment         Segment   @relation(fields: [segment_id], references: [id])
 
   @@index([segment_id])
   @@map("profiles")
@@ -135,9 +135,9 @@ model Subscription {
   id                   String  @id @default(cuid())
   subscription_id      String  @unique
   subscription_item_id String  @unique
-  customer_id          String?
   user_id              String  @unique
   status               String
+  customer_id          String?
   user                 User    @relation(fields: [user_id], references: [id])
 
   @@map("subscriptions")
@@ -155,9 +155,9 @@ model Order {
   email          String
   address        String
   zip_code       String
-  user           User     @relation(fields: [user_id], references: [id])
-  profile        Profile? @relation(fields: [profile_id], references: [id])
   profile_id     String?
+  profile        Profile? @relation(fields: [profile_id], references: [id])
+  user           User     @relation(fields: [user_id], references: [id])
 
   @@map("orders")
 }
