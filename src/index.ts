@@ -26,13 +26,12 @@ const app = express()
 cron.schedule('0 0 * * *', triggerShopifyBulkQueries)
 
 app.post('/shopify-bulk-query-trigger-user', async (req, res) => {
-  const requestBody = req.body;
-  let user_id;
+  const { user_id } = req.body;
 
-  try {
-    user_id = requestBody.user_id;
-  } catch (error) {
-    return res.status(400).json({ error: 'Mangler user_id i request body' });
+  // Validate the request body
+  if (!user_id) {
+    console.error("Mangler user_id i request body");
+    return res.status(400).json({ error: "Mangler user_id i request body" });
   }
 
   const user = await prisma.user.findUnique({
