@@ -6,6 +6,7 @@
     "lib": ["esnext"],
     "esModuleInterop": true,
     "inlineSources": true,
+    "module": "nodenext",
 
     // Set `sourceRoot` to  "/" to strip the build path prefix
     // from generated source code references.
