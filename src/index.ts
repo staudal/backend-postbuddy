@@ -11,7 +11,9 @@ app.use(express.json())
 app.use(audit())
 
 app.use((req, res, next) => {
-  console.log(req);
+  res.on('finish', () => {
+    console.log(`Log: ${req.method} ${req.originalUrl} - ${res.statusCode}`);
+  });
   next();
 });
 
