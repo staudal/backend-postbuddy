@@ -262,11 +262,11 @@ app.post('/shopify-bulk-query-finished', async (req, res) => {
 
     const url = await getBulkOperationUrl(shop, shopifyToken, admin_graphql_api_id);
 
-    const orders = await fetchBulkOperationData(url);
+    const shopifyOrders = await fetchBulkOperationData(url);
 
-    await saveOrders(user.id, orders);
+    await saveOrders(user.id, shopifyOrders);
 
-    await processOrdersForCampaigns(user, orders);
+    await processOrdersForCampaigns(user, shopifyOrders);
 
     return res.status(200).json({ message: "ok" });
 
@@ -275,7 +275,6 @@ app.post('/shopify-bulk-query-finished', async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 });
-
 
 const loadUserWithShopifyIntegration = async (userId: string) => {
   return await prisma.user.findUnique({
@@ -358,80 +357,89 @@ const fetchBulkOperationData = async (url: string) => {
   return orders;
 };
 
-const saveOrders = async (userId: string, orders: Order[]) => {
-  const savedOrders = await prisma.order.findMany({
+const saveOrders = async (userId: string, shopifyOrders: Order[]) => {
+  const existingDbOrders = await prisma.order.findMany({
     where: {
       user_id: userId,
-      order_id: { in: orders.map(order => order.id) },
+      order_id: { in: shopifyOrders.map(shopifyOrder => shopifyOrder.id) },
     },
   });
 
-  const newOrders = orders.filter(
-    (order) => !savedOrders.some((savedOrder) => savedOrder.order_id === order.id),
+  const newShopifyOrders = shopifyOrders.filter(
+    (shopifyOrder) => !existingDbOrders.some((existingDbOrder) => existingDbOrder.order_id === shopifyOrder.id),
   );
 
-  if (newOrders.length > 0) {
+  if (newShopifyOrders.length > 0) {
     await prisma.order.createMany({
-      data: newOrders.map(order => formatOrderData(order, userId)),
+      data: newShopifyOrders.map(newShopifyOrder => formatOrderData(newShopifyOrder, userId)),
       skipDuplicates: true,
     });
   }
 
-  console.log(`Saved ${newOrders.length} new orders`);
-  return newOrders;
+  console.log(`Saved ${newShopifyOrders.length} new orders`);
+  return newShopifyOrders;
 };
 
-const processOrdersForCampaigns = async (user: any, orders: any[]) => {
+const processOrdersForCampaigns = async (user: any, shopifyOrders: Order[]) => {
   const campaigns = user.campaigns;
-  const profilePromises = orders.map(order => findAndUpdateProfile(order, campaigns));
+  const profilePromises = shopifyOrders.map(shopifyOrder => findAndUpdateProfile(shopifyOrder, campaigns));
   console.log(`Processing ${profilePromises.length} orders for ${campaigns.length} campaigns`);
   return await Promise.all(profilePromises);
 };
 
-const findAndUpdateProfile = async (order: Order, campaigns: any[]) => {
+const findAndUpdateProfile = async (shopifyOrder: Order, campaigns: any[]) => {
   for (const campaign of campaigns) {
-    console.log(`Processing order ${order.id} for campaign ${campaign.id}`);
+    console.log(`Processing order ${shopifyOrder.id} for campaign ${campaign.id}`);
 
     const campaignStartDate = new Date(campaign.start_date);
     const campaignEndDate = new Date(campaignStartDate);
     campaignEndDate.setDate(campaignEndDate.getDate() + 60);
 
-    const orderCreatedAt = new Date(order.createdAt);
+    const shopifyOrderCreatedAt = new Date(shopifyOrder.createdAt);
 
-    if (orderCreatedAt >= campaignStartDate && orderCreatedAt <= campaignEndDate) {
-      console.log(`Order ${order.id} falls within campaign ${campaign.id} date range`);
+    if (shopifyOrderCreatedAt >= campaignStartDate && shopifyOrderCreatedAt <= campaignEndDate) {
+      console.log(`Order ${shopifyOrder.id} falls within campaign ${campaign.id} date range`);
 
       const profile = await prisma.profile.findFirst({
-        where: buildProfileWhereClause(order, campaign.segment_id),
+        where: buildProfileWhereClause(shopifyOrder, campaign.segment_id),
         include: { orders: true },
       });
 
       if (profile) {
-        if (profile.orders.some((profileOrder) => profileOrder.order_id === order.id)) {
+        if (profile.orders.some((profileOrder) => profileOrder.order_id === shopifyOrder.id)) {
+          return;
+        }
+
+        const existingDbOrder = await prisma.order.findFirst({
+          where: {
+            order_id: shopifyOrder.id,
+          }
+        });
+
+        if (!existingDbOrder) {
+          console.log("The order has not been created in the database yet");
           return;
         }
 
         // Update the order to connect with the profileId
         await prisma.order.update({
-          where: { id: order.id },
+          where: { id: existingDbOrder.id },
           data: { profile_id: profile.id }, // Associate the order with the profile_id
         });
 
-        console.log(`Updated profile for order ${order.id}`);
+        console.log(`Updated profile for order ${existingDbOrder.id}`);
       }
     }
   }
 };
 
-
-
-const buildProfileWhereClause = (order: Order, segmentId: string) => {
-  const firstName = order.customer?.firstName?.toLowerCase() || "";
-  const lastName = order.customer?.lastName?.toLowerCase() || "";
-  const email = order.customer?.email?.toLowerCase() || "";
-  const zip = order.customer?.addresses?.[0]?.zip || "";
-  const addressFull = order.customer?.addresses?.[0]?.address1?.toLowerCase() || "";
-  const discountCodes = order.discountCodes;
+const buildProfileWhereClause = (shopifyOrder: Order, segmentId: string) => {
+  const firstName = shopifyOrder.customer?.firstName?.toLowerCase() || "";
+  const lastName = shopifyOrder.customer?.lastName?.toLowerCase() || "";
+  const email = shopifyOrder.customer?.email?.toLowerCase() || "";
+  const zip = shopifyOrder.customer?.addresses?.[0]?.zip || "";
+  const addressFull = shopifyOrder.customer?.addresses?.[0]?.address1?.toLowerCase() || "";
+  const discountCodes = shopifyOrder.discountCodes;
   const address = getAddressComponents(addressFull);
   const lastWordOfLastName = lastName.split(" ").pop() || "";
 
@@ -446,17 +454,17 @@ const buildProfileWhereClause = (order: Order, segmentId: string) => {
   };
 };
 
-const formatOrderData = (order: Order, userId: string) => ({
-  created_at: order.createdAt,
-  order_id: order.id,
+const formatOrderData = (newShopifyOrder: Order, userId: string) => ({
+  created_at: newShopifyOrder.createdAt,
+  order_id: newShopifyOrder.id,
   user_id: userId,
-  amount: order.totalPriceSet ? parseFloat(order.totalPriceSet.shopMoney.amount) : 0,
-  discount_codes: order.discountCodes,
-  first_name: order.customer?.firstName?.toLowerCase() || "",
-  last_name: order.customer?.lastName?.toLowerCase() || "",
-  email: order.customer?.email?.toLowerCase() || "",
-  zip_code: order.customer?.addresses?.[0]?.zip || "",
-  address: order.customer?.addresses?.[0]?.address1?.toLowerCase() || "",
+  amount: newShopifyOrder.totalPriceSet ? parseFloat(newShopifyOrder.totalPriceSet.shopMoney.amount) : 0,
+  discount_codes: newShopifyOrder.discountCodes,
+  first_name: newShopifyOrder.customer?.firstName?.toLowerCase() || "",
+  last_name: newShopifyOrder.customer?.lastName?.toLowerCase() || "",
+  email: newShopifyOrder.customer?.email?.toLowerCase() || "",
+  zip_code: newShopifyOrder.customer?.addresses?.[0]?.zip || "",
+  address: newShopifyOrder.customer?.addresses?.[0]?.address1?.toLowerCase() || "",
 });
 
 const getAddressComponents = (addressFull: string) => {
