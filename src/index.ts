@@ -412,6 +412,8 @@ const findAndUpdateProfile = async (order: Order, campaigns: any[]) => {
           where: { id: profile.id },
           data: { orders: { connect: { id: order.id } } },
         });
+
+        console.log(`Connected order ${order.id} to profile ${profile.id}`);
       }
     }
   }
