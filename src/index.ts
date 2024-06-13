@@ -118,7 +118,6 @@ app.post('/shopify-bulk-query-trigger-user', async (req, res) => {
       return res.status(500).json({ error: `Failed to create bulk query for user ${user.id}` });
     }
 
-    console.log(`Created bulk query for user ${user.id}: ${data.data.bulkOperationRunQuery.bulkOperation.id}`);
     res.status(200).json({ message: `Bulk query triggered for user ${user.id}`, bulkOperationId: data.data.bulkOperationRunQuery.bulkOperation.id });
   } catch (error) {
     console.error(`Error creating bulk query for user ${user.id}:`, error);
@@ -127,7 +126,6 @@ app.post('/shopify-bulk-query-trigger-user', async (req, res) => {
 });
 
 app.post('/shopify-bulk-query-finished', async (req, res) => {
-  console.log("HIT: /shopify-bulk-query-finished")
   const { admin_graphql_api_id } = req.body;
   const shop = req.query.shop as string;
   const state = req.query.state as string;

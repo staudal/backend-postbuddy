@@ -4,15 +4,20 @@ import { Order as PrismaOrder } from '@prisma/client'
 const prisma = new PrismaClient()
 
 export const loadUserWithShopifyIntegration = async (userId: string) => {
-  return await prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      integrations: true,
-      campaigns: {
-        include: { segment: true },
+  try {
+    return await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        integrations: true,
+        campaigns: {
+          include: { segment: true },
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    console.error(`Failed to load user with Shopify integration: ${error}`);
+    throw new Error(`Failed to load user with Shopify integration: ${error}`);
+  }
 };
 
 export const getBulkOperationUrl = async (shop: string, token: string, apiId: string) => {
@@ -42,10 +47,10 @@ export const getBulkOperationUrl = async (shop: string, token: string, apiId: st
   const data: any = await response.json();
 
   if (!response.ok || !data.data?.node?.url) {
-    throw new Error('Failed to retrieve bulk operation data URL');
+    console.error(`Failed to fetch bulk operation URL: ${data.errors}`);
+    throw new Error(`Failed to fetch bulk operation URL: ${data.errors}`);
   }
 
-  console.log(`Bulk operation URL: ${data.data.node.url}`);
   return data.data.node.url;
 };
 
@@ -53,7 +58,8 @@ export const fetchBulkOperationData = async (url: string) => {
   const orderResponse = await fetch(url);
 
   if (!orderResponse.ok || !orderResponse.body) {
-    throw new Error('Failed to retrieve bulk operation data');
+    console.error(`Failed to fetch bulk operation data: ${orderResponse.statusText}`);
+    throw new Error(`Failed to fetch bulk operation data: ${orderResponse.statusText}`);
   }
 
   const reader = orderResponse.body.getReader();
@@ -76,7 +82,7 @@ export const fetchBulkOperationData = async (url: string) => {
         const order: Order = JSON.parse(line);
         orders.push(order);
       } catch (error) {
-        console.error("Failed to parse line as JSON:", line, error);
+        console.error(`Failed to parse order: ${error}`);
       }
     }
   }
@@ -103,20 +109,17 @@ export const saveOrders = async (userId: string, shopifyOrders: Order[]) => {
     });
   }
 
-  console.log(`Saved ${newShopifyOrders.length} new orders`);
   return newShopifyOrders;
 };
 
 export const processOrdersForCampaigns = async (user: any, allOrders: PrismaOrder[]) => {
   const campaigns = user.campaigns;
   const profilePromises = allOrders.map(allOrder => findAndUpdateProfile(allOrder, campaigns));
-  console.log(`Processing ${profilePromises.length} orders for ${campaigns.length} campaigns`);
   return await Promise.all(profilePromises);
 };
 
 export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any[]) => {
   for (const campaign of campaigns) {
-    console.log(`Processing order ${allOrder.id} for campaign ${campaign.id}`);
 
     const campaignStartDate = new Date(campaign.start_date);
     const campaignEndDate = new Date(campaignStartDate);
@@ -125,8 +128,6 @@ export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any
     const shopifyOrderCreatedAt = new Date(allOrder.created_at);
 
     if (shopifyOrderCreatedAt >= campaignStartDate && shopifyOrderCreatedAt <= campaignEndDate) {
-      console.log(`Order ${allOrder.id} falls within campaign ${campaign.id} date range`);
-
       const profiles = await prisma.profile.findMany({
         where: buildProfileWhereClause(allOrder, campaign.segment_id),
         include: { orders: true },
@@ -144,7 +145,6 @@ export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any
           });
 
           if (existingDbOrder) {
-            console.log(`Order ${allOrder.id} is already associated with profile ${profile.id}`);
             continue;
           }
 
@@ -155,8 +155,6 @@ export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any
               profile_id: profile.id,
             },
           });
-
-          console.log(`Updated profile for order ${allOrder.id}`);
         }
       }
     }
@@ -203,7 +201,6 @@ export const getAddressComponents = (addressFull: string) => {
 };
 
 export async function triggerShopifyBulkQueries() {
-  console.log("HIT: /shopify-bulk-query-trigger")
   const users = await prisma.user.findMany({
     where: {
       integrations: {
@@ -219,7 +216,7 @@ export async function triggerShopifyBulkQueries() {
   });
 
   if (users.length === 0) {
-    console.log('No users with Shopify integration found');
+    console.error("No users found with Shopify integration");
     return;
   }
 
@@ -312,6 +309,4 @@ export async function triggerShopifyBulkQueries() {
   });
 
   await Promise.allSettled(userPromises);
-
-  console.log('Finished triggering bulk queries');
 }
