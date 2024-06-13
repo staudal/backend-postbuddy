@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import express from 'express'
 import { Order } from './types'
+import { Order as PrismaOrder } from '@prisma/client'
 
 require('dotenv').config()
 const prisma = new PrismaClient()
@@ -266,7 +267,11 @@ app.post('/shopify-bulk-query-finished', async (req, res) => {
 
     await saveOrders(user.id, shopifyOrders);
 
-    await processOrdersForCampaigns(user, shopifyOrders);
+    const allOrders = await prisma.order.findMany({
+      where: { user_id: user.id },
+    });
+
+    await processOrdersForCampaigns(user, allOrders);
 
     return res.status(200).json({ message: "ok" });
 
@@ -380,28 +385,28 @@ const saveOrders = async (userId: string, shopifyOrders: Order[]) => {
   return newShopifyOrders;
 };
 
-const processOrdersForCampaigns = async (user: any, shopifyOrders: Order[]) => {
+const processOrdersForCampaigns = async (user: any, allOrders: PrismaOrder[]) => {
   const campaigns = user.campaigns;
-  const profilePromises = shopifyOrders.map(shopifyOrder => findAndUpdateProfile(shopifyOrder, campaigns));
+  const profilePromises = allOrders.map(allOrder => findAndUpdateProfile(allOrder, campaigns));
   console.log(`Processing ${profilePromises.length} orders for ${campaigns.length} campaigns`);
   return await Promise.all(profilePromises);
 };
 
-const findAndUpdateProfile = async (shopifyOrder: Order, campaigns: any[]) => {
+const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any[]) => {
   for (const campaign of campaigns) {
-    console.log(`Processing order ${shopifyOrder.id} for campaign ${campaign.id}`);
+    console.log(`Processing order ${allOrder.id} for campaign ${campaign.id}`);
 
     const campaignStartDate = new Date(campaign.start_date);
     const campaignEndDate = new Date(campaignStartDate);
     campaignEndDate.setDate(campaignEndDate.getDate() + 60);
 
-    const shopifyOrderCreatedAt = new Date(shopifyOrder.createdAt);
+    const shopifyOrderCreatedAt = new Date(allOrder.created_at);
 
     if (shopifyOrderCreatedAt >= campaignStartDate && shopifyOrderCreatedAt <= campaignEndDate) {
-      console.log(`Order ${shopifyOrder.id} falls within campaign ${campaign.id} date range`);
+      console.log(`Order ${allOrder.id} falls within campaign ${campaign.id} date range`);
 
       const profile = await prisma.profile.findFirst({
-        where: buildProfileWhereClause(shopifyOrder, campaign.segment_id),
+        where: buildProfileWhereClause(allOrder, campaign.segment_id),
         include: { orders: true },
       });
 
@@ -409,37 +414,37 @@ const findAndUpdateProfile = async (shopifyOrder: Order, campaigns: any[]) => {
         // check if the profile has already been associated with the order
         const existingDbOrder = await prisma.orderProfile.findFirst({
           where: {
-            order_id: shopifyOrder.id,
+            order_id: allOrder.id,
             profile_id: profile.id,
           }
         });
 
         if (existingDbOrder) {
-          console.log(`Order ${shopifyOrder.id} is already associated with profile ${profile.id}`);
+          console.log(`Order ${allOrder.id} is already associated with profile ${profile.id}`);
           return;
         }
 
         // Update the order to connect with the profileId
         await prisma.orderProfile.create({
           data: {
-            order_id: shopifyOrder.id,
+            order_id: allOrder.id,
             profile_id: profile.id,
           },
         });
 
-        console.log(`Updated profile for order ${shopifyOrder.id}`);
+        console.log(`Updated profile for order ${allOrder.id}`);
       }
     }
   }
 };
 
-const buildProfileWhereClause = (shopifyOrder: Order, segmentId: string) => {
-  const firstName = shopifyOrder.customer?.firstName?.toLowerCase() || "";
-  const lastName = shopifyOrder.customer?.lastName?.toLowerCase() || "";
-  const email = shopifyOrder.customer?.email?.toLowerCase() || "";
-  const zip = shopifyOrder.customer?.addresses?.[0]?.zip || "";
-  const addressFull = shopifyOrder.customer?.addresses?.[0]?.address1?.toLowerCase() || "";
-  const discountCodes = shopifyOrder.discountCodes;
+const buildProfileWhereClause = (allOrder: PrismaOrder, segmentId: string) => {
+  const firstName = allOrder.first_name.toLowerCase();
+  const lastName = allOrder.last_name.toLowerCase();
+  const email = allOrder.email.toLowerCase();
+  const zip = allOrder.zip_code;
+  const addressFull = allOrder.address;
+  const discountCodes = allOrder.discount_codes;
   const address = getAddressComponents(addressFull);
   const lastWordOfLastName = lastName.split(" ").pop() || "";
 
