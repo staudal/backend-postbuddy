@@ -1,27 +1,26 @@
+require("./instrument.ts");
+
 import { PrismaClient } from '@prisma/client'
 import express from 'express'
 import { fetchBulkOperationData, getBulkOperationUrl, loadUserWithShopifyIntegration, processOrdersForCampaigns, saveOrders, triggerShopifyBulkQueries } from './functions'
 import cron from 'node-cron'
+import * as Sentry from "@sentry/node"
 
 require('dotenv').config()
 const prisma = new PrismaClient()
 const app = express()
 
-app.use(express.json())
-
-app.listen(3000, () =>
-  console.log(`
-🚀 Server ready at: http://localhost:3000`))
-
 // Trigger Shopify bulk queries every day at midnight
 cron.schedule('0 0 * * *', triggerShopifyBulkQueries)
 
 app.post('/shopify-bulk-query-trigger-user', async (req, res) => {
-  const { user_id } = req.body;
+  const requestBody = req.body;
+  let user_id;
 
-  if (!user_id) {
-    console.error('Missing user_id in request body');
-    return res.status(400).send('Missing user_id in request body');
+  try {
+    user_id = requestBody.user_id;
+  } catch (error) {
+    return res.status(400).json({ error: 'Mangler user_id i request body' });
   }
 
   const user = await prisma.user.findUnique({
@@ -32,9 +31,8 @@ app.post('/shopify-bulk-query-trigger-user', async (req, res) => {
     },
   });
 
-  if (!user) {
-    console.error(`User not found for user_id: ${user_id}`);
-    return res.status(404).send(`User not found for user_id: ${user_id}`);
+  if (user === null || user === undefined) {
+    return res.status(404).json({ error: `Bruger med id ${user_id} findes ikke` });
   }
 
   const shopifyIntegration = user.integrations.find(
@@ -42,8 +40,7 @@ app.post('/shopify-bulk-query-trigger-user', async (req, res) => {
   );
 
   if (!shopifyIntegration || !shopifyIntegration.token) {
-    console.error(`User ${user.id} does not have a valid Shopify integration`);
-    return res.status(400).send(`User ${user.id} does not have a valid Shopify integration`);
+    return res.status(400).json({ error: `Bruger med id ${user_id} har ikke en gyldig Shopify-integration` });
   }
 
   const currentDate = new Date();
@@ -114,41 +111,42 @@ app.post('/shopify-bulk-query-trigger-user', async (req, res) => {
     const data: any = await response.json();
 
     if (!response.ok) {
-      console.error(`Failed to create bulk query for user ${user.id}: ${data.errors}`);
-      return res.status(500).json({ error: `Failed to create bulk query for user ${user.id}` });
+      return res.status(500).json({ error: `Der opstod en fejl under oprettelse af bulk query for bruger ${user.id}: ${data.errors}` });
     }
 
-    res.status(200).json({ message: `Bulk query triggered for user ${user.id}`, bulkOperationId: data.data.bulkOperationRunQuery.bulkOperation.id });
+    return res.status(200).json({ message: `Bulk query oprettet for bruger ${user.id}` });
   } catch (error) {
-    console.error(`Error creating bulk query for user ${user.id}:`, error);
-    return res.status(500).json({ error: `Internal server error` });
+    throw new Error(`Der opstod en fejl under oprettelse af bulk query for bruger ${user.id}: ${error}`);
   }
 });
 
 app.post('/shopify-bulk-query-finished', async (req, res) => {
-  const { admin_graphql_api_id } = req.body;
-  const shop = req.query.shop as string;
-  const state = req.query.state as string;
 
-  if (!admin_graphql_api_id || !shop || !state) {
-    console.error('Missing required parameters');
-    return res.status(400).send('Missing required parameters');
+  let admin_graphql_api_id;
+  let shop;
+  let state;
+
+  try {
+    admin_graphql_api_id = req.body.admin_graphql_api_id;
+    shop = req.query.shop as string;
+    state = req.query.state as string;
+  } catch (error) {
+    return res.status(400).json({ error: 'Mangler påkrævede parametre' });
   }
 
   try {
     const user = await loadUserWithShopifyIntegration(state);
 
-    if (!user) {
-      console.error('User not found');
-      return res.status(404).send('User not found');
+    if (user === null || user === undefined) {
+      return res.status(404).json({ error: `Bruger med user_id ${state} findes ikke` });
     }
 
     const shopifyToken = user.integrations.find(
       (integration) => integration.type === 'shopify'
     )?.token;
 
-    if (!shopifyToken) {
-      return res.status(400).send('User does not have a valid Shopify integration');
+    if (shopifyToken === null || shopifyToken === undefined) {
+      return res.status(404).json({ error: `Bruger med user_id ${state} har ikke en gyldig Shopify-integration` });
     }
 
     const url = await getBulkOperationUrl(shop, shopifyToken, admin_graphql_api_id);
@@ -165,6 +163,14 @@ app.post('/shopify-bulk-query-finished', async (req, res) => {
     return res.status(200).json({ message: "ok" });
   } catch (error) {
     console.error("Error processing bulk query finished:", error);
-    return res.status(500).json({ error: "Internal server error" });
+    throw new Error(`Der opstod en fejl under behandling af bulk query for bruger ${state}: ${error}`);
   }
 });
+
+Sentry.setupExpressErrorHandler(app);
+
+app.use(express.json())
+
+app.listen(3000, () =>
+  console.log(`
+🚀 Server ready at: http://localhost:3000`))
