@@ -398,6 +398,7 @@ const findAndUpdateProfile = async (order: Order, campaigns: any[]) => {
     campaignEndDate.setDate(campaignEndDate.getDate() + 60);
 
     const orderCreatedAt = new Date(order.createdAt);
+    console.log(`Order created at: ${orderCreatedAt}`);
     if (orderCreatedAt >= campaignStartDate && orderCreatedAt <= campaignEndDate) {
       console.log(`Order ${order.id} falls within campaign ${campaign.id} date range`);
       const profile = await prisma.profile.findFirst({
