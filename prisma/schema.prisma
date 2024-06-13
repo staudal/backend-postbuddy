@@ -104,7 +104,6 @@ model Profile {
   in_robinson     Boolean        @default(false)
   segment_id      String
   letter_sent     Boolean        @default(false)
-  revenue         Float          @default(0)
   klaviyo_id      String?
   letter_sent_at  DateTime?
   email           String
@@ -169,15 +168,6 @@ model OrderProfile {
 
   @@id([order_id, profile_id])
   @@map("orders_profiles")
-}
-
-model ProcessedOrder {
-  id          String   @id @default(cuid())
-  createdAt   DateTime @default(now())
-  order_id    String
-  campaign_id String
-
-  @@map("processed_orders")
 }
 
 model Design {
