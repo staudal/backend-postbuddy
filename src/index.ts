@@ -393,9 +393,9 @@ const findAndUpdateProfile = async (order: Order, campaigns: any[]) => {
     console.log(`Processing order ${order.id} for campaign ${campaign.id}`);
     const campaignStartDate = new Date(campaign.start_date);
     console.log(`Campaign start date: ${campaignStartDate}`);
-    const campaignEndDate = new Date(campaignStartDate);
-    console.log(`Campaign end date: ${campaignEndDate}`);
+    const campaignEndDate = new Date(campaignStartDate); // Clone the start date
     campaignEndDate.setDate(campaignEndDate.getDate() + 60);
+    console.log(`Campaign end date: ${campaignEndDate}`);
 
     const orderCreatedAt = new Date(order.createdAt);
     console.log(`Order created at: ${orderCreatedAt}`);
@@ -407,7 +407,6 @@ const findAndUpdateProfile = async (order: Order, campaigns: any[]) => {
       });
 
       if (profile) {
-
         // if the order is already connected to the profile, skip
         if (profile.orders.some((profileOrder) => profileOrder.order_id === order.id)) {
           return;
@@ -422,6 +421,7 @@ const findAndUpdateProfile = async (order: Order, campaigns: any[]) => {
     }
   }
 };
+
 
 const buildProfileWhereClause = (order: Order, segmentId: string) => {
   const firstName = order.customer?.firstName?.toLowerCase() || "";
