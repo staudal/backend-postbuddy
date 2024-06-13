@@ -1,5 +1,19 @@
-import * as Sentry from "@sentry/node"
+import "dotenv/config";
+import express from "express";
+import { PrismaClient } from "@prisma/client";
+import cron from "node-cron";
+import * as Sentry from "@sentry/node";
 import { nodeProfilingIntegration } from "@sentry/profiling-node";
+
+// Import your functions
+import { fetchBulkOperationData, getBulkOperationUrl, loadUserWithShopifyIntegration, processOrdersForCampaigns, saveOrders, triggerShopifyBulkQueries } from "./functions";
+
+// Initialize Prisma and Express
+const prisma = new PrismaClient();
+const app = express();
+
+// Use JSON parser middleware
+app.use(express.json());
 
 Sentry.init({
   dsn: "https://65d3e283420a03a763042d0b2d669bdc@o4507426520760320.ingest.de.sentry.io/4507426522398800",
@@ -13,25 +27,17 @@ Sentry.init({
   profilesSampleRate: 1.0,
 });
 
-import { PrismaClient } from '@prisma/client'
-import express from 'express'
-import { fetchBulkOperationData, getBulkOperationUrl, loadUserWithShopifyIntegration, processOrdersForCampaigns, saveOrders, triggerShopifyBulkQueries } from './functions'
-import cron from 'node-cron'
-
-require('dotenv').config()
-const prisma = new PrismaClient()
-const app = express()
-
 // Trigger Shopify bulk queries every day at midnight
 cron.schedule('0 0 * * *', triggerShopifyBulkQueries)
 
 app.post('/shopify-bulk-query-trigger-user', async (req, res) => {
-  const { user_id } = req.body;
+  const requestBody = req.body;
+  let user_id;
 
-  // Validate the request body
-  if (!user_id) {
-    console.error("Mangler user_id i request body");
-    return res.status(400).json({ error: "Mangler user_id i request body" });
+  try {
+    user_id = requestBody.user_id;
+  } catch (error) {
+    return res.status(400).json({ error: 'Mangler user_id i request body' });
   }
 
   const user = await prisma.user.findUnique({
@@ -179,8 +185,6 @@ app.post('/shopify-bulk-query-finished', async (req, res) => {
 });
 
 Sentry.setupExpressErrorHandler(app);
-
-app.use(express.json())
 
 app.listen(3000, () =>
   console.log(`
