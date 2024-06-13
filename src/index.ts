@@ -1,12 +1,19 @@
 import { PrismaClient } from '@prisma/client'
 import express from 'express'
 import { Order } from './types'
+import audit from 'express-requests-logger'
 
 require('dotenv').config()
 const prisma = new PrismaClient()
 const app = express()
 
 app.use(express.json())
+app.use(audit())
+
+app.use((req, res, next) => {
+  console.log(req);
+  next();
+});
 
 app.listen(3000, () =>
   console.log(`
