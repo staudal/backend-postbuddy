@@ -3,16 +3,16 @@
   "version": "1.0.0",
   "license": "MIT",
   "scripts": {
-    "dev": "ts-node src/index.ts && npm run sentry:sourcemaps",
-    "sentry:sourcemaps": "sentry-cli sourcemaps inject --org postbuddy --project node-express ./dist && sentry-cli sourcemaps upload --org postbuddy --project node-express ./dist"
+    "dev": "ts-node app.ts && npm run sentry:sourcemaps",
+    "sentry:sourcemaps": "sentry-cli sourcemaps inject --org postbuddy --project node-express ./dist && sentry-cli sourcemaps upload --org postbuddy --project node-express ./dist",
+    "build": "tsc",
+    "start": "node dist/app.js"
   },
   "dependencies": {
     "@prisma/client": "5.15.0",
     "@sentry/cli": "^2.32.1",
     "@sentry/node": "^8.9.2",
     "@sentry/profiling-node": "^8.9.2",
-    "axe": "^12.2.6",
-    "cabin": "^13.2.6",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "node-cron": "^3.0.3",
@@ -26,8 +26,5 @@
     "prisma": "5.15.0",
     "ts-node": "10.9.2",
     "typescript": "5.4.5"
-  },
-  "prisma": {
-    "seed": "ts-node prisma/seed.ts"
   }
 }
