@@ -28,6 +28,10 @@ app.use(express.json());
 // Trigger Shopify bulk queries every day at midnight
 cron.schedule('0 0 * * *', triggerShopifyBulkQueries)
 
+app.get('/', async (req, res) => {
+  return res.status(200).json({ message: "Hello World" });
+});
+
 app.post('/shopify-bulk-query-trigger-user', async (req, res) => {
   const requestBody = req.body;
   let user_id;
