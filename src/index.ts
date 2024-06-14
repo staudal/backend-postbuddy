@@ -29,7 +29,7 @@ app.use(express.json());
 cron.schedule('0 0 * * *', triggerShopifyBulkQueries)
 
 app.get('/', async (req, res) => {
-  return res.status(200).json({ message: "Hello World" });
+  return res.status(200).json({ message: "Hello Worlds!" });
 });
 
 app.post('/shopify-bulk-query-trigger-user', async (req, res) => {
