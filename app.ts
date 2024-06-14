@@ -23,6 +23,7 @@ import campaignRouter from "./routes/campaigns";
 import designRouter from "./routes/designs";
 import integrationRouter from "./routes/integrations";
 import blobRouter from "./routes/blob";
+import settingsRouter from "./routes/settings";
 
 import { triggerShopifyBulkQueries } from "./functions";
 
@@ -45,6 +46,7 @@ app.use('/', campaignRouter, authenticateToken);
 app.use('/', designRouter, authenticateToken);
 app.use('/', integrationRouter, authenticateToken);
 app.use('/', blobRouter, authenticateToken);
+app.use('/', settingsRouter, authenticateToken);
 
 Sentry.setupExpressErrorHandler(app);
 

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../app';
-import { InternalServerError, MissingRequiredParametersError, UserNotFoundError } from '../errors';
+import { InsufficientRightsError, InternalServerError, MissingRequiredParametersError, UserAlreadyExistsError, UserNotFoundError } from '../errors';
 
 const router = Router();
 
@@ -78,6 +78,19 @@ router.get('/user/uploads', async (req, res) => {
 })
 
 router.get('/users', async (req, res) => {
+  const { user_id } = req.body;
+  if (!user_id) return MissingRequiredParametersError;
+
+  // Check that user is an admin
+  const user = await prisma.user.findUnique({
+    where: { id: user_id },
+  });
+  if (!user) return UserNotFoundError;
+
+  if (user.role !== 'admin') {
+    return res.status(403).json({ error: InsufficientRightsError });
+  }
+
   const users = await prisma.user.findMany({
     select: {
       id: true,
@@ -96,6 +109,86 @@ router.get('/users', async (req, res) => {
   });
 
   res.json(users);
+})
+
+router.post('/users', async (req, res) => {
+  const { user_id, first_name, last_name, company, email, password, role, demo } = req.body;
+  if (!user_id) return MissingRequiredParametersError
+
+  const user = await prisma.user.findUnique({
+    where: { id: user_id },
+  });
+  if (!user) return UserNotFoundError;
+
+  // Check that user has the correct role
+  if (user.role !== 'admin') {
+    return res.status(403).json({ error: InsufficientRightsError });
+  }
+
+  // Check if the created user already exists
+  const existingUser = await prisma.user.findUnique({
+    where: { email },
+  });
+  if (existingUser) {
+    return res.status(400).json({ error: UserAlreadyExistsError });
+  }
+
+  // Create the new user
+  try {
+    await prisma.user.create({
+      data: {
+        first_name,
+        last_name,
+        company,
+        email,
+        password,
+        role,
+        demo,
+      },
+    });
+
+    res.status(201).json({ success: 'User created successfully' });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: InternalServerError });
+  }
+})
+
+router.put(`/users/:id`, async (req, res) => {
+  const { user_id, first_name, last_name, company, email, role, demo } = req.body;
+  const id = req.params.id;
+  if (!user_id || !id) return MissingRequiredParametersError;
+
+  // Check if user is an admin
+  const user = await prisma.user.findUnique({
+    where: { id: user_id },
+  });
+  if (!user) return UserNotFoundError;
+
+  if (user.role !== 'admin') {
+    return res.status(403).json({ error: InsufficientRightsError });
+  }
+
+  try {
+    await prisma.user.update({
+      where: {
+        id
+      },
+      data: {
+        first_name,
+        last_name,
+        email,
+        company,
+        role,
+        demo,
+      },
+    });
+
+    res.status(200).json({ success: 'User updated successfully' });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: InternalServerError });
+  }
 })
 
 router.post('/user/access-token', async (req, res) => {

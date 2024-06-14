@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../app';
-import { DesignNotFoundError, InternalServerError, MissingRequiredParametersError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
-import { billUserForLettersSent } from '../functions';
+import { CampaignNotFoundError, DesignNotFoundError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, MissingShopifyIntegrationError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
+import { billUserForLettersSent, generateTestDesign } from '../functions';
+import Client from "ssh2-sftp-client";
 
 const router = Router();
 
@@ -105,7 +106,7 @@ router.post('/campaigns', async (req: Request, res: Response) => {
       data: { status: "scheduled" },
     })
 
-    return res.json({ success: "Kampagnen er blevet oprettet og er blevet planlagt til at starte på det angivne tidspunkt" });
+    return res.status(201).json({ success: "Kampagnen er blevet oprettet og er blevet sat til at starte på en senere dato" });
   }
 
   // If the campaign is a demo, update the profiles to sent. If not, generate the pdf which will update the profiles to sent
@@ -141,9 +142,149 @@ router.post('/campaigns', async (req: Request, res: Response) => {
     data: { status: "active" },
   })
 
-  return res.json({ success: segment.demo ? "Kampagnen er blevet oprettet" : "Kampagnen er blevet oprettet og sendt til produktion" });
+  return res.status(201).json({ success: segment.demo ? "Kampagnen er blevet oprettet" : "Kampagnen er blevet oprettet og er blevet sendt til produktion" });
 })
 
-router.put
+router.put('/campaigns/:id', async (req: Request, res: Response) => {
+  const { user_id, status } = req.body;
+  const id = req.params.id;
+  if (!user_id || !id || !status) return res.status(400).json({ error: MissingRequiredParametersError });
+
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: id },
+  });
+  if (!campaign) return CampaignNotFoundError;
+
+  if (campaign.user_id !== user_id) return InsufficientRightsError;
+
+  try {
+    await prisma.campaign.update({
+      where: { id: id },
+      data: { status: status },
+      include: {
+        segment: {
+          include: {
+            profiles: true,
+          },
+        },
+      },
+    });
+
+    return res.status(200).json({ success: "Kampagnen er blevet opdateret" });
+  } catch (error: any) {
+    console.error(error);
+    return res.status(500).json({ error: InternalServerError });
+  }
+})
+
+router.delete('/campaigns/:id', async (req: Request, res: Response) => {
+  const { user_id } = req.body;
+  const id = req.params.id;
+  if (!user_id || !id) return res.status(400).json({ error: MissingRequiredParametersError });
+
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: id },
+  });
+  if (!campaign) return CampaignNotFoundError;
+
+  if (campaign.user_id !== user_id) return InsufficientRightsError;
+
+  try {
+    await prisma.campaign.delete({
+      where: { id: id },
+    });
+
+    return res.status(200).json({ success: "Kampagnen er blevet slettet" });
+  } catch (error: any) {
+    console.error(error);
+    return res.status(500).json({ error: InternalServerError });
+  }
+})
+
+router.post('/campaigns/test-letter', async (req: Request, res: Response) => {
+  const { user_id, design_id } = req.body;
+  if (!user_id || !design_id) return res.status(400).json({ error: MissingRequiredParametersError });
+
+  const user = await prisma.user.findUnique({
+    where: { id: user_id },
+  });
+  if (!user) return UserNotFoundError;
+
+  const subscription = await prisma.subscription.findFirst({
+    where: { user_id }
+  })
+  if (!subscription) return MissingSubscriptionError
+
+  const shopifyIntegration = await prisma.integration.findFirst({
+    where: {
+      user_id: user.id,
+      type: "shopify",
+    },
+  })
+  if (!shopifyIntegration) return MissingShopifyIntegrationError
+
+  const design = await prisma.design.findUnique({
+    where: { id: design_id },
+  })
+  if (!design || !design.blob) return DesignNotFoundError
+
+  if (!user.address || !user.zip_code || !user.city) MissingAddressError
+
+  // Bill the user for the letters sent
+  try {
+    await billUserForLettersSent(1, user_id)
+  } catch (error: any) {
+    console.error(error);
+    return res.status(500).json({ error: InternalServerError });
+  }
+
+
+  try {
+    let format = "";
+    const pdfBuffer = await generateTestDesign(design.blob, format);
+
+    const client = new Client();
+    await client.connect({
+      host: process.env.SFTP_HOST,
+      port: parseInt(process.env.SFTP_PORT as string),
+      username: process.env.SFTP_USER,
+      password: process.env.SFTP_PASSWORD,
+    });
+
+    // Create datestring e.g. 15-05-2024
+    const date = new Date();
+    const dateString = `${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
+
+    // Create folder if not exists
+    await client.mkdir(`/files/til-distplus/${dateString}`, true);
+
+    // Upload the PDF to the SFTP server
+    await client.put(
+      pdfBuffer,
+      `/files/til-distplus/${dateString}/${format}_${user.id.slice(-5)}_1.pdf`,
+    );
+
+    // Generate csv data
+    let csvData = "fullname,company,address,zip_city,id\n"; // CSV headers
+    csvData += `"${user.first_name} ${user.last_name}","${user.company}","${user.address}","${user.zip_code} ${user.city}","${user.id.slice(-5)}"\n`;
+
+    // Convert the CSV data to a Buffer
+    const csvBuffer = Buffer.from(csvData);
+
+    // Upload the CSV data to the SFTP server
+    await client.put(
+      csvBuffer,
+      `/files/til-distplus/${dateString}/${format}_${user.id.slice(-5)}_1.csv`,
+    );
+
+    // Close the SFTP connection
+    await client.end();
+
+    return res.status(201).json({ success: "Testbrevet er blevet sendt til produktion" });
+  } catch (error: any) {
+    console.error(error);
+    return res.status(500).json({ error: InternalServerError });
+  }
+})
 
 export default router;

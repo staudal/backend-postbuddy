@@ -9,6 +9,7 @@
     "start": "node dist/app.js"
   },
   "dependencies": {
+    "@cesdk/node": "^1.28.0",
     "@prisma/client": "5.15.0",
     "@sentry/cli": "^2.32.1",
     "@sentry/node": "^8.9.2",
@@ -21,6 +22,7 @@
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3",
     "signale": "^1.4.0",
+    "ssh2-sftp-client": "^10.0.3",
     "stripe": "^15.11.0"
   },
   "devDependencies": {
@@ -31,6 +33,7 @@
     "@types/node": "20.14.2",
     "@types/node-cron": "^3.0.11",
     "@types/signale": "^1.4.7",
+    "@types/ssh2-sftp-client": "^9.0.3",
     "prisma": "5.15.0",
     "ts-node": "10.9.2",
     "typescript": "5.4.5"
