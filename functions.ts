@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client'
 import { Order } from './types'
 import { Order as PrismaOrder } from '@prisma/client'
+import Stripe from 'stripe';
+import { MissingSubscriptionError } from './errors';
 const prisma = new PrismaClient()
 
 export const loadUserWithShopifyIntegration = async (userId: string) => {
@@ -353,5 +355,30 @@ export async function triggerShopifyBulkQueries() {
   } catch (error: any) {
     console.error(`Error triggering Shopify bulk queries: ${error}`);
     throw new Error(`Error triggering Shopify bulk queries: ${error.message}`);
+  }
+}
+
+export async function billUserForLettersSent(profilesLength: number, user_id: string) {
+  const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+  if (!STRIPE_SECRET_KEY) {
+    throw new Error('Missing Stripe secret key');
+  }
+
+  const stripe = new Stripe(STRIPE_SECRET_KEY)
+  const subscription = await prisma.subscription.findFirst({
+    where: { user_id },
+  });
+  if (!subscription) {
+    throw new Error(MissingSubscriptionError);
+  }
+
+  const usageRecord = await stripe.subscriptionItems.createUsageRecord(subscription.subscription_item_id, {
+    quantity: profilesLength,
+    timestamp: Math.floor(Date.now() / 1000),
+    action: 'increment',
+  });
+
+  if (!usageRecord) {
+    throw new Error('Failed to bill user for letters sent');
   }
 }
