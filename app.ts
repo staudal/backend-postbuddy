@@ -10,17 +10,25 @@ Sentry.init({
 });
 
 import express from "express";
+import cors from "cors";
 import { PrismaClient } from "@prisma/client";
 import cron from "node-cron";
+import authenticateToken from "./routes/middleware";
 import indexRouter from "./routes/index";
 import shopifyRouter from "./routes/shopify";
+import authRouter from "./routes/auth";
+import userRouter from "./routes/user";
+import segmentRouter from "./routes/segments";
+import campaignRouter from "./routes/campaigns";
+import designRouter from "./routes/designs";
+import integrationRouter from "./routes/integrations";
 
 import { triggerShopifyBulkQueries } from "./functions";
 
 const app = express();
 export const prisma = new PrismaClient();
 
-// Use JSON parser middleware
+app.use(cors());
 app.use(express.json());
 
 // Trigger Shopify bulk queries every day at midnight
@@ -28,7 +36,13 @@ cron.schedule('0 0 * * *', triggerShopifyBulkQueries);
 
 // Setup routes
 app.use('/', indexRouter);
-app.use('/', shopifyRouter);
+app.use('/', authRouter);
+app.use('/', shopifyRouter, authenticateToken);
+app.use('/', userRouter, authenticateToken);
+app.use('/', segmentRouter, authenticateToken);
+app.use('/', campaignRouter, authenticateToken);
+app.use('/', designRouter, authenticateToken);
+app.use('/', integrationRouter, authenticateToken);
 
 Sentry.setupExpressErrorHandler(app);
 
