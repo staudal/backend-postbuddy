@@ -8,5 +8,6 @@
     "inlineSources": true,
     "module": "nodenext",
     "sourceRoot": "/"
-  }
+  },
+  "include": ["custom.d.ts"]
 }
