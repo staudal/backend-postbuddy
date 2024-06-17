@@ -3,17 +3,13 @@
   "version": "1.0.0",
   "license": "MIT",
   "scripts": {
-    "dev": "ts-node app.ts && npm run sentry:sourcemaps",
-    "sentry:sourcemaps": "sentry-cli sourcemaps inject --org postbuddy --project node-express ./dist && sentry-cli sourcemaps upload --org postbuddy --project node-express ./dist",
+    "dev": "ts-node app.ts",
     "build": "tsc",
     "start": "node dist/app.js"
   },
   "dependencies": {
     "@cesdk/node": "^1.28.0",
     "@prisma/client": "5.15.0",
-    "@sentry/cli": "^2.32.1",
-    "@sentry/node": "^8.9.2",
-    "@sentry/profiling-node": "^8.9.2",
     "@vercel/blob": "^0.23.3",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
