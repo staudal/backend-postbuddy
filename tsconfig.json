@@ -9,5 +9,5 @@
     "module": "nodenext",
     "sourceRoot": "/"
   },
-  "include": ["custom.d.ts"]
+  "include": ["custom.d.ts", "routes/**/*.ts", "app.ts"]
 }

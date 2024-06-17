@@ -29,7 +29,9 @@ router.post('/bulk-query-trigger', async (req, res) => {
     }
 
     const currentDate = new Date();
-    const currentDateMinus365Days = new Date(currentDate);
+    const currentDateMinus365Days = new Date(
+      currentDate.setDate(currentDate.getDate() - 365),
+    );
     const dateOnly = currentDateMinus365Days.toISOString().split('T')[0];
     const shopifyApiVersion = '2021-10';
 
@@ -87,6 +89,7 @@ router.post('/bulk-query-trigger', async (req, res) => {
     });
 
     const data: any = await response.json();
+    console.log(data.data.bulkOperationRunQuery.bulkOperation)
 
     if (!response.ok) {
       return res.status(500).json({ error: `Der opstod en fejl under oprettelse af bulk query for bruger ${user.id}: ${data.errors}` });
