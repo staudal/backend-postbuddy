@@ -3,7 +3,7 @@ import { KlaviyoSegmentProfile, Order, ProfileToAdd } from './types'
 import { Order as PrismaOrder } from '@prisma/client'
 import Stripe from 'stripe';
 import { MissingSubscriptionError } from './errors';
-import CreativeEngine, { MimeType } from '@cesdk/node';
+import CreativeEngine, * as CESDK from '@cesdk/node';
 import { PDFDocument } from 'pdf-lib';
 import Client from "ssh2-sftp-client";
 import { createHmac } from 'node:crypto';
@@ -434,6 +434,7 @@ export async function generateTestDesign(blob: string, format: string): Promise<
   generateBleedLines(engine, pages, pageWidth, pageHeight)
   updateVariables(engine, profile)
   generateIdBlock(idText, engine, pageWidth, pageHeight, pages, profile);
+  const { MimeType } = CESDK;
   const pdfBlob = await engine.block.export(scene, MimeType.Pdf, {
     exportPdfWithHighCompatibility: true
   });
@@ -850,6 +851,7 @@ export async function generatePdf(profiles: Profile[], designBlob: string) {
     for (const profile of profiles) {
       updateVariables(engine, profile);
       generateIdText(engine, profile, idText, pages);
+      const { MimeType } = CESDK;
       const pdfBlob = await engine.block.export(scene, MimeType.Pdf);
       const pdfBuffer = Buffer.from(await pdfBlob.arrayBuffer());
       const pdf = await PDFDocument.load(pdfBuffer);
