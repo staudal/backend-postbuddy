@@ -4,6 +4,7 @@ declare global {
   type HTMLCanvasElement = any;
   type HTMLVideoElement = any;
   type ReadableStream = any;
+  type MimeType = any;
 }
 
 // If needed, export the declaration
