@@ -7,7 +7,10 @@
     "esModuleInterop": true,
     "inlineSources": true,
     "module": "nodenext",
-    "sourceRoot": "/"
+    "moduleResolution": "nodenext", // Ensure correct handling
+    "target": "esnext",
+    "allowSyntheticDefaultImports": true, // Ensures synthetic handling
+    "skipLibCheck": true // Helps compatibility fast-tracking resolution
   },
   "include": ["custom.d.ts", "routes/**/*.ts", "app.ts"]
 }
