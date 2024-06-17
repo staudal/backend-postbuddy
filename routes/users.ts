@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../app';
 import { InsufficientRightsError, InternalServerError, MissingRequiredParametersError, UserAlreadyExistsError, UserNotFoundError } from '../errors';
+import argon2 from 'argon2';
 
 const router = Router();
 
@@ -94,6 +95,8 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: UserAlreadyExistsError });
   }
 
+  const hashedPassword = await argon2.hash(password);
+
   // Create the new user
   try {
     await prisma.user.create({
@@ -102,7 +105,7 @@ router.post('/', async (req, res) => {
         last_name,
         company,
         email,
-        password,
+        password: hashedPassword,
         role,
         demo,
       },

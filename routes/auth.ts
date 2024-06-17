@@ -3,6 +3,7 @@ import { prisma } from '../app';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { InternalServerError, UserAlreadyExistsError, UserNotFoundError } from '../errors';
+import argon2 from 'argon2';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
@@ -21,7 +22,7 @@ router.post('/signup', async (req, res) => {
     }
 
     // Hash the password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await argon2.hash(password);
 
     // Create a new user
     const user = await prisma.user.create({
@@ -65,7 +66,7 @@ router.post('/signin', async (req, res) => {
     }
 
     // Compare the password
-    const passwordMatch = await bcrypt.compare(password, user.password);
+    const passwordMatch = await argon2.verify(user.password, password);
 
     if (!passwordMatch) {
       return res.status(403).json({ error: UserNotFoundError });
