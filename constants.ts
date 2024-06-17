@@ -1,0 +1,2 @@
+export const API_URL = process.env.NODE_ENV === 'production' ? 'https://api.postbuddy.dk' : 'http://localhost:800';
+export const WEB_URL = process.env.NODE_ENV === 'production' ? 'https://postbuddy.dk' : 'http://localhost:3000';

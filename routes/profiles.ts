@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../app';
 import { InternalServerError, MissingRequiredParametersError, ProfilesNotFoundError } from '../errors';
+import { API_URL } from '../constants';
 
 const router = Router();
 
@@ -131,7 +132,7 @@ router.get('/webhook', async (req, res) => {
       }
 
       if (campaign.demo === false) {
-        const response = await fetch('http://localhost:3000/letters', {
+        const response = await fetch(API_URL + '/letters', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

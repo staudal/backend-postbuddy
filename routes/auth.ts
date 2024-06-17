@@ -38,7 +38,7 @@ router.post('/signup', async (req, res) => {
     const token = jwt.sign(
       { userId: user.id, email: user.email },
       JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '24h' } // Expires in 24 hours
     );
 
     res.status(201).json({
@@ -75,7 +75,7 @@ router.post('/signin', async (req, res) => {
     const token = jwt.sign(
       { userId: user.id, email: user.email },
       JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '24h' } // Expires in 24 hours
     );
 
     res.status(200).json({ success: 'User signed in successfully', token });
@@ -105,7 +105,7 @@ router.post('/refresh-token', async (req, res) => {
     const newToken = jwt.sign(
       { userId: user.id, email: user.email },
       JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '24h' } // Expires in 24 hours
     );
 
     res.json({ token: newToken });

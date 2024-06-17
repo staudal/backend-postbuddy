@@ -7,6 +7,7 @@ import CreativeEngine, * as CESDK from '@cesdk/node';
 import { PDFDocument } from 'pdf-lib';
 import Client from "ssh2-sftp-client";
 import { createHmac } from 'node:crypto';
+import { API_URL } from './constants';
 
 const prisma = new PrismaClient()
 
@@ -953,7 +954,7 @@ export async function activateScheduledCampaigns() {
     }
 
     if (campaign.demo === false) {
-      const response = await fetch('http://localhost:3000/letters', {
+      const response = await fetch(API_URL + "/letters", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1073,7 +1074,7 @@ export async function updateKlaviyoProfiles() {
       }
 
       if (campaign.demo === false) {
-        const response = await fetch("http://localhost:3000/letters", {
+        const response = await fetch(API_URL + "/letters", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

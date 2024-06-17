@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../app';
 import { InternalServerError, MissingRequiredParametersError, MissingSubscriptionError, UserNotFoundError } from '../errors';
 import Stripe from 'stripe';
+import { API_URL } from '../constants';
 
 const router = Router();
 
@@ -25,8 +26,8 @@ router.get('/new', async (req, res) => {
   try {
     const session = await stripe.checkout.sessions.create({
       client_reference_id: user.id,
-      success_url: 'http://localhost:3001/dashboard/account',
-      cancel_url: 'http://localhost:3001/dashboard/account',
+      success_url: API_URL + '/dashboard/account',
+      cancel_url: API_URL + '/dashboard/account',
       line_items: [
         {
           // Usage pricing
@@ -76,7 +77,7 @@ router.get('/portal', async (req, res) => {
     }
     const session = await stripe.billingPortal.sessions.create({
       customer: subscription.customer_id,
-      return_url: `http://localhost:3001/dashboard/account`,
+      return_url: API_URL + `/dashboard/account`,
     });
 
     return res.status(200).json({ url: session.url });

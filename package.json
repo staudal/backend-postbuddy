@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "license": "MIT",
   "scripts": {
-    "dev": "ts-node app.ts",
+    "dev": "cross-env NODE_ENV=development ts-node app.ts",
     "build": "tsc",
-    "start": "node dist/app.js"
+    "start": "cross-env NODE_ENV=production node dist/app.js"
   },
   "dependencies": {
     "@cesdk/node": "^1.28.0",
@@ -36,6 +36,7 @@
     "@types/node-cron": "^3.0.11",
     "@types/signale": "^1.4.7",
     "@types/ssh2-sftp-client": "^9.0.3",
+    "cross-env": "^7.0.3",
     "prisma": "5.15.0",
     "ts-node": "10.9.2",
     "typescript": "5.4.5"

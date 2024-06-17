@@ -22,6 +22,7 @@ import analyticsRouter from "./routes/analytics";
 import profilesRouter from "./routes/profiles";
 
 import { activateScheduledCampaigns, triggerShopifyBulkQueries, updateKlaviyoProfiles } from "./functions";
+import { API_URL } from "./constants";
 
 const app = express();
 export const prisma = new PrismaClient();
@@ -58,5 +59,5 @@ app.use('/integrations', integrationRouter);
 
 const port = process.env.PORT || 8000;
 app.listen(port, () => {
-  console.log(`🚀 Server ready at: http://localhost:${port}`);
+  console.log(`🚀 Server ready at: ${API_URL}:${port}`);
 });

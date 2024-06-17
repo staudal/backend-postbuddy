@@ -3,6 +3,7 @@ import { prisma } from '../app';
 import { InternalServerError, MissingRequiredParametersError, UserNotFoundError } from '../errors';
 import { extractQueryWithoutHMAC, validateHMAC } from '../functions';
 import authenticateToken from './middleware';
+import { API_URL, WEB_URL } from '../constants';
 
 const router = Router();
 
@@ -55,7 +56,7 @@ router.get('/shopify/connect', authenticateToken, async (req, res) => {
       "https://shopify.com/admin/oauth/authorize?" +
       new URLSearchParams({
         client_id: "54ab0548747300abd0847fd2fc81587c",
-        redirect_uri: "http://localhost:8000/integrations/shopify/callback",
+        redirect_uri: `${API_URL}/integrations/shopify/callback`,
         state: user.id,
         scopes: "customer_read_markets,customer_read_orders,read_all_orders,read_customers,read_orders",
       }).toString();
@@ -248,19 +249,19 @@ router.get('/shopify/callback', async (req, res) => {
       },
       body: JSON.stringify({
         query: `
-        mutation {
-          webhookSubscriptionCreate(
-            topic: APP_UNINSTALLED,
-            webhookSubscription: {
-              format: JSON,
-              callbackUrl: "http://localhost:8000/webhooks/shopify/uninstall?shop=${shop}&state=${user.id}",
-            }
-          ) {
-            userErrors { field, message }
-            webhookSubscription { id }
-          }
+    mutation {
+      webhookSubscriptionCreate(
+        topic: APP_UNINSTALLED,
+        webhookSubscription: {
+          format: JSON,
+          callbackUrl: "${API_URL}/webhooks/shopify/uninstall?shop=${shop}&state=${user.id}",
         }
-      `,
+      ) {
+        userErrors { field, message }
+        webhookSubscription { id }
+      }
+    }
+  `,
       }),
     });
 
@@ -271,7 +272,7 @@ router.get('/shopify/callback', async (req, res) => {
     }
 
     // Trigger the bulk query for orders
-    const ordersWebhookResponse = await fetch('http://localhost:8000/shopify/bulk-query-trigger', {
+    const ordersWebhookResponse = await fetch(API_URL + '/shopify/bulk-query-trigger', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: user.id }),
@@ -285,7 +286,7 @@ router.get('/shopify/callback', async (req, res) => {
     console.log('Successfully triggered the bulk query for orders');
     console.log(await ordersWebhookResponse.json());
 
-    return res.redirect('http://localhost:3000/dashboard/integrations');
+    return res.redirect(WEB_URL + '/dashboard/integrations');
   } catch (error: any) {
     console.error(error);
     return res.status(500).json({ error: InternalServerError });
