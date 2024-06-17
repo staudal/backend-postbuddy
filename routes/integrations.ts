@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { prisma } from '../app';
 import { InternalServerError, MissingRequiredParametersError, UserNotFoundError } from '../errors';
 import { extractQueryWithoutHMAC, validateHMAC } from '../functions';
@@ -6,7 +6,7 @@ import authenticateToken from './middleware';
 
 const router = Router();
 
-router.get('/', authenticateToken, async (req: Request, res: Response) => {
+router.get('/', authenticateToken, async (req, res) => {
   const user_id = req.body.user_id;
   const integrationType = req.body.integrationType;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
@@ -41,7 +41,7 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
   }
 })
 
-router.get('/shopify/connect', authenticateToken, async (req: Request, res: Response) => {
+router.get('/shopify/connect', authenticateToken, async (req, res) => {
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -67,7 +67,7 @@ router.get('/shopify/connect', authenticateToken, async (req: Request, res: Resp
   }
 })
 
-router.get('/shopify/disconnect', authenticateToken, async (req: Request, res: Response) => {
+router.get('/shopify/disconnect', authenticateToken, async (req, res) => {
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -112,7 +112,7 @@ router.get('/shopify/disconnect', authenticateToken, async (req: Request, res: R
   }
 })
 
-router.get('/shopify/callback', async (req: Request, res: Response) => {
+router.get('/shopify/callback', async (req, res) => {
   try {
     const fullUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
     const url = new URL(fullUrl);
@@ -292,7 +292,7 @@ router.get('/shopify/callback', async (req: Request, res: Response) => {
   }
 })
 
-router.post('/klaviyo/connect', authenticateToken, async (req: Request, res: Response) => {
+router.post('/klaviyo/connect', authenticateToken, async (req, res) => {
   const { user_id, api_key } = req.body;
   if (!user_id || !api_key) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -331,7 +331,7 @@ router.post('/klaviyo/connect', authenticateToken, async (req: Request, res: Res
   }
 })
 
-router.get('/klaviyo/disconnect', authenticateToken, async (req: Request, res: Response) => {
+router.get('/klaviyo/disconnect', authenticateToken, async (req, res) => {
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 

@@ -1,11 +1,11 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { prisma } from '../app';
 import { InternalServerError, MissingRequiredParametersError, MissingSubscriptionError, UserNotFoundError } from '../errors';
 import Stripe from 'stripe';
 
 const router = Router();
 
-router.get('/new', async (req: Request, res: Response) => {
+router.get('/new', async (req, res) => {
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -17,9 +17,7 @@ router.get('/new', async (req: Request, res: Response) => {
   const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 
   if (STRIPE_SECRET_KEY == null) {
-    return new Response("Stripe secret key not found", {
-      status: 500,
-    });
+    return res.status(500).json({ error: InternalServerError });
   }
 
   const stripe = new Stripe(STRIPE_SECRET_KEY);
@@ -56,7 +54,7 @@ router.get('/new', async (req: Request, res: Response) => {
   }
 })
 
-router.get('/portal', async (req: Request, res: Response) => {
+router.get('/portal', async (req, res) => {
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -88,7 +86,7 @@ router.get('/portal', async (req: Request, res: Response) => {
   }
 })
 
-router.get('/status', async (req: Request, res: Response) => {
+router.get('/status', async (req, res) => {
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 

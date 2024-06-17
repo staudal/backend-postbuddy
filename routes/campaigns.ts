@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request } from 'express';
 import { prisma } from '../app';
 import { CampaignNotFoundError, DesignNotFoundError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
 import { billUserForLettersSent, generateTestDesign } from '../functions';
@@ -6,7 +6,7 @@ import Client from "ssh2-sftp-client";
 
 const router = Router();
 
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   const user_id = req.body.user_id;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -46,7 +46,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 })
 
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req, res) => {
   const { user_id, name, type, segment_id, design_id, discountCodes, start_date } = req.body;
   if (!name || !user_id || !type || !segment_id || !design_id || !discountCodes) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -145,7 +145,7 @@ router.post('/', async (req: Request, res: Response) => {
   return res.status(201).json({ success: segment.demo ? "Kampagnen er blevet oprettet" : "Kampagnen er blevet oprettet og er blevet sendt til produktion" });
 })
 
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', async (req, res) => {
   const { user_id, status, design_id } = req.body;
   const id = req.params.id;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
@@ -173,7 +173,7 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 })
 
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', async (req, res) => {
   const { user_id } = req.body;
   const id = req.params.id;
   if (!user_id || !id) return res.status(400).json({ error: MissingRequiredParametersError });
@@ -197,7 +197,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 })
 
-router.post('/test-letter', async (req: Request, res: Response) => {
+router.post('/test-letter', async (req, res) => {
   const { user_id, design_id } = req.body;
   if (!user_id || !design_id) return res.status(400).json({ error: MissingRequiredParametersError });
 

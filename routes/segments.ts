@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { prisma } from '../app';
 import { IntegrationNotFoundError, InternalServerError, MissingRequiredParametersError, SegmentNotFoundError, UserNotFoundError } from '../errors';
 import { Profile } from '@prisma/client';
@@ -9,7 +9,7 @@ import { KlaviyoSegment } from '../types';
 
 const router = Router();
 
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   const user_id = req.body.user_id;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -30,7 +30,7 @@ router.get('/', async (req: Request, res: Response) => {
   res.json(segments);
 })
 
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', async (req, res) => {
   const user_id = req.body.user_id;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -57,7 +57,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
   res.json({ success: 'Segment deleted successfully' });
 })
 
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', async (req, res) => {
   const user_id = req.body.user_id;
   const newName = req.body.segmentName;
   if (!user_id || !newName) return res.status(400).json({ error: MissingRequiredParametersError });
@@ -83,7 +83,7 @@ router.put('/:id', async (req: Request, res: Response) => {
   res.json({ success: 'Segment updated successfully' });
 })
 
-router.get('/export/:id', async (req: Request, res: Response) => {
+router.get('/export/:id', async (req, res) => {
   const { user_id } = req.body;
   const { id } = req.params;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
@@ -141,7 +141,7 @@ router.get('/export/:id', async (req: Request, res: Response) => {
   }
 })
 
-router.get('/klaviyo', async (req: Request, res: Response) => {
+router.get('/klaviyo', async (req, res) => {
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -190,7 +190,7 @@ router.get('/klaviyo', async (req: Request, res: Response) => {
   }
 })
 
-router.post('/csv', (req: Request, res: Response) => {
+router.post('/csv', (req, res) => {
   const { user_id } = req.body;
   const form = formidable({ multiples: false, keepExtensions: true });
 
@@ -342,7 +342,7 @@ router.post('/csv', (req: Request, res: Response) => {
   });
 });
 
-router.post('/klaviyo', async (req: Request, res: Response) => {
+router.post('/klaviyo', async (req, res) => {
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -434,7 +434,7 @@ router.post('/klaviyo', async (req: Request, res: Response) => {
   }
 })
 
-router.post('/webhook', async (req: Request, res: Response) => {
+router.post('/webhook', async (req, res) => {
   const { user_id, name } = req.body;
   if (!user_id || !name) return res.status(400).json({ error: MissingRequiredParametersError });
 

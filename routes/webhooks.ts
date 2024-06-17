@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { prisma } from '../app';
 import { CountryNotSupportedError, InternalServerError, MissingRequiredParametersError, MissingShopifyIntegrationError, MissingSubscriptionError, SegmentNotFoundError, UserNotFoundError } from '../errors';
 import { checkIfProfileIsInRobinson, validateCountry } from '../functions';
@@ -8,7 +8,7 @@ import { createHmac } from 'node:crypto';
 
 const router = Router();
 
-router.post('/segment', async (req: Request, res: Response) => {
+router.post('/segment', async (req, res) => {
   const auth = req.headers.authorization;
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -68,7 +68,7 @@ router.post('/segment', async (req: Request, res: Response) => {
   }
 })
 
-router.post('/stripe', async (req: Request, res: Response) => {
+router.post('/stripe', async (req, res) => {
   const payload = req.body;
   switch (payload.type) {
     case "checkout.session.completed": {
@@ -142,7 +142,7 @@ router.post('/stripe', async (req: Request, res: Response) => {
   return res.status(200).json({ success: 'Webhook received' });
 })
 
-router.post('/shopify/customer-deletion', async (req: Request, res: Response) => {
+router.post('/shopify/customer-deletion', async (req, res) => {
   const CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET as string;
   const hmacHeader = req.headers['X-Shopify-Hmac-SHA256'];
   const body = await req.body.text();
@@ -158,7 +158,7 @@ router.post('/shopify/customer-deletion', async (req: Request, res: Response) =>
   return res.status(200).json({ success: 'Webhook received' });
 })
 
-router.post('/shopify/customer-request', async (req: Request, res: Response) => {
+router.post('/shopify/customer-request', async (req, res) => {
   const CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET as string;
   const hmacHeader = req.headers['X-Shopify-Hmac-SHA256'];
   const body = await req.body.text();
@@ -174,7 +174,7 @@ router.post('/shopify/customer-request', async (req: Request, res: Response) => 
   return res.status(200).json({ success: 'Webhook received' });
 })
 
-router.post('/shopify/deletion', async (req: Request, res: Response) => {
+router.post('/shopify/deletion', async (req, res) => {
   const CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET as string;
   const hmacHeader = req.headers['X-Shopify-Hmac-SHA256'];
   const body = await req.body.text();
@@ -190,7 +190,7 @@ router.post('/shopify/deletion', async (req: Request, res: Response) => {
   return res.status(200).json({ success: 'Webhook received' });
 })
 
-router.post('/shopify/uninstall', async (req: Request, res: Response) => {
+router.post('/shopify/uninstall', async (req, res) => {
   const url = new URL(req.url)
   const state = req.query.state;
   if (!state) return res.status(400).json({ error: 'Missing required parameters' });

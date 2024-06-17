@@ -1,10 +1,10 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { prisma } from '../app';
 import { InternalServerError, MissingRequiredParametersError } from '../errors';
 
 const router = Router();
 
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req, res) => {
   const { user_id, firstName, lastName, company, address, zip, city, country } = req.body;
   if (!user_id || !firstName || !lastName || !company || !address || !zip || !city || !country) return res.status(400).json({ error: MissingRequiredParametersError });
 

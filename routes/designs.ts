@@ -1,11 +1,11 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { prisma } from '../app';
 import { DesignNotFoundError, InternalServerError, MissingRequiredParametersError, UserNotFoundError } from '../errors';
 import { del, put } from '@vercel/blob';
 
 const router = Router();
 
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   const user_id = req.body.user_id;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -32,7 +32,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 })
 
-router.get('/:id', async (req: Request, res: Response) => {
+router.get('/:id', async (req, res) => {
   const user_id = req.body.user_id;
   const { id } = req.params;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
@@ -53,7 +53,7 @@ router.get('/:id', async (req: Request, res: Response) => {
   return res.status(200).json(design);
 })
 
-router.post('/duplicate', async (req: Request, res: Response) => {
+router.post('/duplicate', async (req, res) => {
   try {
     const { user_id, design_id } = req.body;
     if (!user_id || !design_id) return res.status(400).json({ error: MissingRequiredParametersError });
@@ -86,7 +86,7 @@ router.post('/duplicate', async (req: Request, res: Response) => {
   }
 })
 
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req, res) => {
   try {
     const { user_id, name, format } = req.body;
     if (!name || !user_id || !format) return res.status(400).json({ error: MissingRequiredParametersError });
@@ -113,7 +113,7 @@ router.post('/', async (req: Request, res: Response) => {
   }
 })
 
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', async (req, res) => {
   try {
     const { user_id, name } = req.body;
     const { id } = req.params;
@@ -143,7 +143,7 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 })
 
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', async (req, res) => {
   try {
     const { user_id } = req.body;
     const { id } = req.params;
@@ -179,7 +179,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 })
 
-router.post('/thumbnail', async (req: Request, res: Response) => {
+router.post('/thumbnail', async (req, res) => {
   try {
     const { user_id, design_id, thumbnail } = req.body;
     if (!user_id || !design_id || !thumbnail) return res.status(400).json({ error: MissingRequiredParametersError });

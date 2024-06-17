@@ -1,10 +1,10 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { prisma } from '../app';
 import { InternalServerError, MissingRequiredParametersError } from '../errors';
 
 const router = Router();
 
-router.get('/aov', async (req: Request, res: Response) => {
+router.get('/aov', async (req, res) => {
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -78,7 +78,7 @@ router.get('/aov', async (req: Request, res: Response) => {
   }
 })
 
-router.get('/revenue-for-repeat-purchases', async (req: Request, res: Response) => {
+router.get('/revenue-for-repeat-purchases', async (req, res) => {
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -170,7 +170,7 @@ router.get('/revenue-for-repeat-purchases', async (req: Request, res: Response) 
   }
 })
 
-router.get('/time-between-purchases', async (req: Request, res: Response) => {
+router.get('/time-between-purchases', async (req, res) => {
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
