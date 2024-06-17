@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../app';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcrypt';
 import { InternalServerError, UserAlreadyExistsError, UserNotFoundError } from '../errors';
 import argon2 from 'argon2';
 
