@@ -10,3 +10,5 @@ export const MissingSubscriptionError = 'Brugeren har ikke et aktivt abonnement'
 export const MissingShopifyIntegrationError = 'Brugeren har ikke tilknyttet en Shopify integration';
 export const MissingAddressError = 'Brugeren har ikke tilknyttet en adresse';
 export const InsufficientRightsError = 'Brugeren har ikke tilstrækkelige rettigheder til at udføre denne handling';
+export const IntegrationNotFoundError = 'Du har ikke tilknyttet en integration af denne type';
+export const CountryNotSupportedError = 'Dette land understøttes ikke';

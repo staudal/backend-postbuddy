@@ -1,12 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../app';
-import { CampaignNotFoundError, DesignNotFoundError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, MissingShopifyIntegrationError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
+import { CampaignNotFoundError, DesignNotFoundError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
 import { billUserForLettersSent, generateTestDesign } from '../functions';
 import Client from "ssh2-sftp-client";
 
 const router = Router();
 
-router.get('/campaigns', async (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   const user_id = req.body.user_id;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -46,7 +46,7 @@ router.get('/campaigns', async (req: Request, res: Response) => {
   }
 })
 
-router.post('/campaigns', async (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const { user_id, name, type, segment_id, design_id, discountCodes, start_date } = req.body;
   if (!name || !user_id || !type || !segment_id || !design_id || !discountCodes) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -145,10 +145,10 @@ router.post('/campaigns', async (req: Request, res: Response) => {
   return res.status(201).json({ success: segment.demo ? "Kampagnen er blevet oprettet" : "Kampagnen er blevet oprettet og er blevet sendt til produktion" });
 })
 
-router.put('/campaigns/:id', async (req: Request, res: Response) => {
-  const { user_id, status } = req.body;
+router.put('/:id', async (req: Request, res: Response) => {
+  const { user_id, status, design_id } = req.body;
   const id = req.params.id;
-  if (!user_id || !id || !status) return res.status(400).json({ error: MissingRequiredParametersError });
+  if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
   const campaign = await prisma.campaign.findUnique({
     where: { id: id },
@@ -160,14 +160,10 @@ router.put('/campaigns/:id', async (req: Request, res: Response) => {
   try {
     await prisma.campaign.update({
       where: { id: id },
-      data: { status: status },
-      include: {
-        segment: {
-          include: {
-            profiles: true,
-          },
-        },
-      },
+      data: {
+        status: status || campaign.status,
+        design_id: design_id || campaign.design_id,
+      }
     });
 
     return res.status(200).json({ success: "Kampagnen er blevet opdateret" });
@@ -177,7 +173,7 @@ router.put('/campaigns/:id', async (req: Request, res: Response) => {
   }
 })
 
-router.delete('/campaigns/:id', async (req: Request, res: Response) => {
+router.delete('/:id', async (req: Request, res: Response) => {
   const { user_id } = req.body;
   const id = req.params.id;
   if (!user_id || !id) return res.status(400).json({ error: MissingRequiredParametersError });
@@ -201,7 +197,7 @@ router.delete('/campaigns/:id', async (req: Request, res: Response) => {
   }
 })
 
-router.post('/campaigns/test-letter', async (req: Request, res: Response) => {
+router.post('/test-letter', async (req: Request, res: Response) => {
   const { user_id, design_id } = req.body;
   if (!user_id || !design_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -209,19 +205,6 @@ router.post('/campaigns/test-letter', async (req: Request, res: Response) => {
     where: { id: user_id },
   });
   if (!user) return UserNotFoundError;
-
-  const subscription = await prisma.subscription.findFirst({
-    where: { user_id }
-  })
-  if (!subscription) return MissingSubscriptionError
-
-  const shopifyIntegration = await prisma.integration.findFirst({
-    where: {
-      user_id: user.id,
-      type: "shopify",
-    },
-  })
-  if (!shopifyIntegration) return MissingShopifyIntegrationError
 
   const design = await prisma.design.findUnique({
     where: { id: design_id },
@@ -235,9 +218,8 @@ router.post('/campaigns/test-letter', async (req: Request, res: Response) => {
     await billUserForLettersSent(1, user_id)
   } catch (error: any) {
     console.error(error);
-    return res.status(500).json({ error: InternalServerError });
+    return res.status(500).json({ error: error.message });
   }
-
 
   try {
     let format = "";

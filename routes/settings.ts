@@ -4,7 +4,7 @@ import { InternalServerError, MissingRequiredParametersError } from '../errors';
 
 const router = Router();
 
-router.post('/settings', async (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const { user_id, firstName, lastName, company, address, zip, city, country } = req.body;
   if (!user_id || !firstName || !lastName || !company || !address || !zip || !city || !country) return res.status(400).json({ error: MissingRequiredParametersError });
 

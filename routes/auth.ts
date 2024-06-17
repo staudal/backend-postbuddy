@@ -7,7 +7,7 @@ import { InternalServerError, UserAlreadyExistsError, UserNotFoundError } from '
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
-router.post('/auth/signup', async (req, res) => {
+router.post('/signup', async (req, res) => {
   try {
     const { firstName, lastName, company, email, password } = req.body;
 
@@ -51,7 +51,7 @@ router.post('/auth/signup', async (req, res) => {
   }
 })
 
-router.post('/auth/signin', async (req, res) => {
+router.post('/signin', async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -61,7 +61,6 @@ router.post('/auth/signin', async (req, res) => {
     });
 
     if (!user) {
-      console.log('User not found');
       return res.status(403).json({ error: UserNotFoundError });
     }
 
@@ -69,7 +68,6 @@ router.post('/auth/signin', async (req, res) => {
     const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
-      console.log('Password does not match');
       return res.status(403).json({ error: UserNotFoundError });
     }
 
@@ -87,7 +85,7 @@ router.post('/auth/signin', async (req, res) => {
   }
 })
 
-router.post('/auth/refresh-token', async (req, res) => {
+router.post('/refresh-token', async (req, res) => {
   try {
     const { token } = req.body;
 
@@ -110,7 +108,6 @@ router.post('/auth/refresh-token', async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    console.log('Token refreshed successfully');
     res.json({ token: newToken });
   } catch (error) {
     console.error('Token refresh error:', error);

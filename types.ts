@@ -26,3 +26,69 @@ export interface Order {
   createdAt: string;
   discountCodes: string[];
 }
+
+export type ProfileToAdd = {
+  id?: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  address: string;
+  city: string;
+  zip_code: string;
+  segment_id: string;
+  in_robinson: boolean;
+  custom_variable?: string | null;
+  demo?: boolean;
+};
+
+export interface KlaviyoSegmentProfile {
+  [key: string]: any;
+  id: string;
+  attributes: {
+    [key: string]: any;
+    email: string;
+    first_name: string;
+    last_name: string;
+    location: {
+      [key: string]: any;
+      address1: string;
+      city: string;
+      country: string;
+      zip: string;
+    };
+    properties: {
+      custom_variable: string;
+    }
+  };
+}
+
+export interface KlaviyoSegment {
+  type: string;
+  id: string;
+  attributes: {
+    name: string;
+    definition: string | null;
+    created: string;
+    updated: string;
+    is_active: boolean;
+    is_processing: boolean;
+    is_starred: boolean;
+  };
+  relationships: {
+    profiles: {
+      links: {
+        self: string;
+        related: string;
+      };
+    };
+    tags: {
+      links: {
+        self: string;
+        related: string;
+      };
+    };
+  };
+  links: {
+    self: string;
+  };
+}

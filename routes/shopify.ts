@@ -4,7 +4,8 @@ import { fetchBulkOperationData, getBulkOperationUrl, loadUserWithShopifyIntegra
 
 const router = Router();
 
-router.post('/shopify-bulk-query-trigger-user', async (req, res) => {
+router.post('/bulk-query-trigger', async (req, res) => {
+  console.log("TRIGGER")
   const { user_id } = req.body;
 
   if (!user_id) {
@@ -97,7 +98,8 @@ router.post('/shopify-bulk-query-trigger-user', async (req, res) => {
   }
 });
 
-router.post('/shopify-bulk-query-finished', async (req, res) => {
+router.post('/bulk-query-finished', async (req, res) => {
+  console.log("FINISHED")
   const { admin_graphql_api_id } = req.body;
   const { shop, state } = req.query;
 

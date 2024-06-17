@@ -1,11 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../app';
-import { DesignNotFoundError, InternalServerError, MissingRequiredParametersError, UserNotFoundError } from '../errors';
+import { DesignNotFoundError, InternalServerError, MissingRequiredParametersError } from '../errors';
 import { del, put } from '@vercel/blob';
 
 const router = Router();
 
-router.post('/blob/new', async (req: Request, res: Response) => {
+router.post('/new', async (req: Request, res: Response) => {
   const { user_id, design_id, scene } = req.body;
   if (!user_id || !design_id || !scene) return res.status(400).json({ error: MissingRequiredParametersError });
 
