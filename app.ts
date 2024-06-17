@@ -56,8 +56,6 @@ app.use('/blob', authenticateToken, blobRouter);
 // Partially protected routes
 app.use('/integrations', integrationRouter);
 
-Sentry.setupExpressErrorHandler(app);
-
 app.listen(8000, () => {
   console.log("🚀 Server ready at: http://localhost:8000");
 });
