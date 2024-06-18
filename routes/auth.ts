@@ -41,7 +41,7 @@ router.post('/signup', async (req, res) => {
       { expiresIn: '24h' } // Expires in 24 hours
     );
 
-    res.status(201).json({
+    return res.status(201).json({
       success: 'User created successfully',
       token,
     });
