@@ -827,7 +827,7 @@ export async function returnProfilesInRobinson(profiles: ProfileToAdd[]) {
 
 export const config = {
   license: process.env.IMGLY_LICENSE,
-  baseURL: `${API_URL}/cesdk/node/assets`,
+  baseURL: "https://app.postbuddy.dk/node/assets",
 }
 
 if (!config.license) {
@@ -868,7 +868,6 @@ export async function generatePdf(profiles: Profile[], designBlob: string) {
     return pdf;
   } catch (error: any) {
     console.error(`Error generating PDF: ${error}`);
-    console.log(config)
     throw new Error(`Error generating PDF: ${error.message}`);
   }
 }
