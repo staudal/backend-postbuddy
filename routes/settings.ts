@@ -4,9 +4,9 @@ import { InternalServerError, MissingRequiredParametersError } from '../errors';
 
 const router = Router();
 
-router.post('/', async (req, res) => {
+router.put('/', async (req, res) => {
   const { user_id, firstName, lastName, company, address, zip, city, country } = req.body;
-  if (!user_id || !firstName || !lastName || !company || !address || !zip || !city || !country) return res.status(400).json({ error: MissingRequiredParametersError });
+  if (!user_id) return MissingRequiredParametersError;
 
   try {
     await prisma.user.update({
@@ -18,9 +18,9 @@ router.post('/', async (req, res) => {
         address,
         zip_code: zip,
         city,
-        country
-      }
-    })
+        country,
+      },
+    });
 
     return res.status(200).json({ success: "Brugeroplysningerne er blevet opdateret" });
   } catch (error: any) {
