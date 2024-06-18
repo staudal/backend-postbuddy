@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../app';
 import { InternalServerError, MissingRequiredParametersError, UserNotFoundError } from '../errors';
 import { extractQueryWithoutHMAC, validateHMAC } from '../functions';
-import authenticateToken from './middleware';
+import { authenticateToken } from './middleware';
 import { API_URL, WEB_URL } from '../constants';
 
 const router = Router();

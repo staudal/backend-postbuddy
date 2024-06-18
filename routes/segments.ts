@@ -30,6 +30,17 @@ router.get('/', async (req, res) => {
   res.json(segments);
 })
 
+router.get('/admin', async (req, res) => {
+  const segments = await prisma.segment.findMany({
+    include: { campaign: true, profiles: true },
+    orderBy: {
+      created_at: 'desc',
+    },
+  });
+
+  return res.status(200).json(segments);
+})
+
 router.delete('/:id', async (req, res) => {
   const user_id = req.body.user_id;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });

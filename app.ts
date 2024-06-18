@@ -4,7 +4,7 @@ import express from "express";
 import cors from "cors";
 import { PrismaClient } from "@prisma/client";
 import cron from "node-cron";
-import authenticateToken from "./routes/middleware";
+import { authenticateToken, adminOnly } from "./routes/middleware";
 import indexRouter from "./routes/index";
 import shopifyRouter from "./routes/shopify";
 import authRouter from "./routes/auth";
@@ -20,6 +20,7 @@ import webhooksRouter from "./routes/webhooks";
 import subscriptionRouter from "./routes/subscriptions";
 import analyticsRouter from "./routes/analytics";
 import profilesRouter from "./routes/profiles";
+import adminRoute from "./routes/admin";
 
 import { activateScheduledCampaigns, triggerShopifyBulkQueries, updateKlaviyoProfiles } from "./functions";
 import { API_URL } from "./constants";
@@ -57,7 +58,10 @@ app.use('/blob', authenticateToken, blobRouter);
 // Partially protected routes
 app.use('/integrations', integrationRouter);
 
+// Admin routes
+app.use('/admin', authenticateToken, adminOnly, adminRoute);
+
 const port = process.env.PORT || 8000;
 app.listen(port, () => {
-  console.log(`🚀 Server ready at: ${API_URL}:${port}`);
+  console.log(`🚀 Server ready at: ${API_URL}`);
 });
