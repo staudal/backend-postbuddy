@@ -191,7 +191,6 @@ router.post('/shopify/deletion', async (req, res) => {
 })
 
 router.post('/shopify/uninstall', async (req, res) => {
-  const url = new URL(req.url)
   const state = req.query.state;
   if (!state) return res.status(400).json({ error: 'Missing required parameters' });
 
