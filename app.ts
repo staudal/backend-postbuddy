@@ -24,12 +24,16 @@ import adminRoute from "./routes/admin";
 
 import { activateScheduledCampaigns, triggerShopifyBulkQueries, updateKlaviyoProfiles } from "./functions";
 import { API_URL } from "./constants";
+import path from "path";
 
 const app = express();
 export const prisma = new PrismaClient();
 
 app.use(cors());
 app.use(express.json());
+
+// Serve the cesdk directory statically
+app.use('/cesdk', express.static(path.join(__dirname, 'cesdk')));
 
 // Trigger Shopify bulk queries every day at midnight
 cron.schedule('0 0 * * *', triggerShopifyBulkQueries);

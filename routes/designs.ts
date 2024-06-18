@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { prisma } from '../app';
 import { DesignNotFoundError, InternalServerError, MissingRequiredParametersError, UserNotFoundError } from '../errors';
 import { del, put } from '@vercel/blob';
+import { generatePdf } from '../functions';
+import { Profile } from '@prisma/client';
 
 const router = Router();
 
@@ -224,6 +226,39 @@ router.post('/thumbnail', async (req, res) => {
     console.error(error);
     return res.status(500).json({ error: InternalServerError });
   }
+})
+
+router.post('/export', async (req, res) => {
+  const { user_id, design_id } = req.body;
+  if (!user_id || !design_id) return res.status(400).json({ error: MissingRequiredParametersError });
+
+  const design = await prisma.design.findUnique({
+    where: { id: design_id, user_id },
+  });
+  if (!design || !design.blob) return res.status(404).json({ error: DesignNotFoundError });
+
+  const dummyProfile: Profile = {
+    first_name: 'John',
+    last_name: 'Doe',
+    email: 'john@doe.dk',
+    address: 'Testvej 1',
+    city: 'Testby',
+    zip_code: '1234',
+    in_robinson: false,
+    country: 'Danmark',
+    custom_variable: 'Random data',
+    demo: true,
+    klaviyo_id: '1234',
+    letter_sent: false,
+    letter_sent_at: null,
+    segment_id: '1234',
+    id: '12345678',
+  }
+
+  const pdf = await generatePdf([dummyProfile], design.blob)
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename=export.pdf');
+  res.send(pdf);
 })
 
 export default router;

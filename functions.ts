@@ -826,8 +826,12 @@ export async function returnProfilesInRobinson(profiles: ProfileToAdd[]) {
 }
 
 export const config = {
-  license: process.env.NEXT_PUBLIC_IMGLY_LICENSE,
-  baseURL: "https://app.postbuddy.dk/node/assets",
+  license: process.env.IMGLY_LICENSE,
+  baseURL: `${API_URL}/cesdk/node/assets`,
+}
+
+if (!config.license) {
+  throw new Error("Missing IMGLY license key");
 }
 
 export function generateIdText(engine: CreativeEngine, profile: Profile, idText: number, pages: number[]) {
@@ -864,6 +868,7 @@ export async function generatePdf(profiles: Profile[], designBlob: string) {
     return pdf;
   } catch (error: any) {
     console.error(`Error generating PDF: ${error}`);
+    console.log(config)
     throw new Error(`Error generating PDF: ${error.message}`);
   }
 }
