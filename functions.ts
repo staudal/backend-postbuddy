@@ -7,7 +7,7 @@ import CreativeEngine, * as CESDK from '@cesdk/node';
 import { PDFDocument } from 'pdf-lib';
 import Client from "ssh2-sftp-client";
 import { createHmac } from 'node:crypto';
-import { API_URL } from './constants';
+import { API_URL, config } from './constants';
 
 const prisma = new PrismaClient()
 
@@ -391,11 +391,6 @@ export async function billUserForLettersSent(profilesLength: number, user_id: st
 }
 
 export async function generateTestDesign(blob: string, format: string): Promise<Buffer> {
-  const config = {
-    license: process.env.IMGLY_LICENSE,
-    baseURL: "https://app.postbuddy.dk/node/assets",
-  }
-
   const engine = await CreativeEngine.init(config);
   const scene = await engine.scene.loadFromURL(blob);
   const pages = engine.scene.getPages();
@@ -825,11 +820,6 @@ export async function returnProfilesInRobinson(profiles: ProfileToAdd[]) {
   }
 }
 
-export const config = {
-  license: process.env.IMGLY_LICENSE,
-  baseURL: "https://app.postbuddy.dk/node/assets",
-}
-
 if (!config.license) {
   throw new Error("Missing IMGLY license key");
 }
@@ -843,26 +833,29 @@ export function generateIdText(engine: CreativeEngine, profile: Profile, idText:
 }
 
 export async function generatePdf(profiles: Profile[], designBlob: string) {
+  console.log("Generating PDF");
   try {
     const mergedPdf = await PDFDocument.create();
-    const engine = await CreativeEngine.init(config);
-    const scene = await engine.scene.loadFromURL(designBlob);
-    const pages = engine.scene.getPages();
-    const pageWidth = engine.block.getWidth(pages[0]);
-    const pageHeight = engine.block.getHeight(pages[0]);
-    const idText = engine.block.create("text");
-    generateIdBlock(idText, engine, pageWidth, pageHeight, pages);
-    generateBleedLines(engine, pages, pageWidth, pageHeight);
-    for (const profile of profiles) {
-      updateVariables(engine, profile);
-      generateIdText(engine, profile, idText, pages);
-      const { MimeType } = CESDK;
-      const pdfBlob = await engine.block.export(scene, MimeType.Pdf);
-      const pdfBuffer = Buffer.from(await pdfBlob.arrayBuffer());
-      const pdf = await PDFDocument.load(pdfBuffer);
-      const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-      copiedPages.forEach((page) => mergedPdf.addPage(page));
-    }
+    await CreativeEngine.init(config).then(async (engine) => {
+      console.log("Engine initialized");
+      const scene = await engine.scene.loadFromURL(designBlob);
+      const pages = engine.scene.getPages();
+      const pageWidth = engine.block.getWidth(pages[0]);
+      const pageHeight = engine.block.getHeight(pages[0]);
+      const idText = engine.block.create("text");
+      generateIdBlock(idText, engine, pageWidth, pageHeight, pages);
+      generateBleedLines(engine, pages, pageWidth, pageHeight);
+      for (const profile of profiles) {
+        updateVariables(engine, profile);
+        generateIdText(engine, profile, idText, pages);
+        const { MimeType } = CESDK;
+        const pdfBlob = await engine.block.export(scene, MimeType.Pdf);
+        const pdfBuffer = Buffer.from(await pdfBlob.arrayBuffer());
+        const pdf = await PDFDocument.load(pdfBuffer);
+        const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+        copiedPages.forEach((page) => mergedPdf.addPage(page));
+      }
+    });
     const pdfArray = await mergedPdf.save();
     const pdf = Buffer.from(pdfArray);
     return pdf;
