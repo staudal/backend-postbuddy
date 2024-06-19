@@ -72,6 +72,4 @@ app.use('/admin', authenticateToken, adminOnly, adminRoute);
 app.use(errorHandler)
 
 const port = process.env.PORT || 8000
-app.listen(port, () => {
-  logtail.info(`🚀 Server ready at: ${API_URL}`)
-})
+app.listen(port);
