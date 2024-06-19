@@ -8,6 +8,7 @@ import { PDFDocument } from 'pdf-lib';
 import Client from "ssh2-sftp-client";
 import { createHmac } from 'node:crypto';
 import { API_URL, config } from './constants';
+import { logtail } from './app';
 
 const prisma = new PrismaClient()
 
@@ -50,7 +51,6 @@ export const getBulkOperationUrl = async (shop: string, token: string, apiId: st
   const data: any = await response.json();
 
   if (!response.ok || !data.data?.node?.url) {
-    console.error(`Failed to fetch bulk operation URL: ${data.errors}`);
     throw new Error(`Failed to fetch bulk operation URL: ${data.errors}`);
   }
 
@@ -61,7 +61,6 @@ export const fetchBulkOperationData = async (url: string) => {
   const orderResponse = await fetch(url);
 
   if (!orderResponse.ok || !orderResponse.body) {
-    console.error(`Failed to fetch bulk operation data: ${orderResponse.statusText}`);
     throw new Error(`Failed to fetch bulk operation data: ${orderResponse.statusText}`);
   }
 
@@ -204,6 +203,7 @@ export const getAddressComponents = (addressFull: string) => {
 
 
 export async function triggerShopifyBulkQueries() {
+  logtail.info("Triggering Shopify bulk queries");
   const users = await prisma.user.findMany({
     where: {
       integrations: {
@@ -219,7 +219,6 @@ export async function triggerShopifyBulkQueries() {
   });
 
   if (users.length === 0) {
-    console.error("No users found with Shopify integration");
     return;
   }
 
@@ -300,7 +299,7 @@ export async function triggerShopifyBulkQueries() {
     const data: any = await response.json();
 
     if (!response.ok) {
-      console.error(`Failed to create bulk query for user ${user.id}: ${data.errors}`);
+      logtail.error(`Failed to trigger Shopify bulk query for user ${user.id}: ${data.errors}`);
     }
   });
 
@@ -844,6 +843,7 @@ export async function generateCsvAndSendToPrintPartner(profiles: Profile[], camp
 }
 
 export async function activateScheduledCampaigns() {
+  logtail.info("Activating scheduled campaigns");
   const campaigns = await prisma.campaign.findMany({
     where: {
       status: "scheduled",
@@ -881,6 +881,7 @@ export async function activateScheduledCampaigns() {
       });
 
       if (!response.ok) {
+        logtail.error("Error sending letters");
         throw new Error("Error sending letters");
       }
     }
@@ -905,9 +906,12 @@ export async function activateScheduledCampaigns() {
       });
     }
   }
+
+  logtail.info("Scheduled campaigns activated");
 }
 
 export async function updateKlaviyoProfiles() {
+  logtail.info("Updating Klaviyo profiles");
   const users = await prisma.user.findMany({
     where: {
       integrations: {
@@ -1001,6 +1005,7 @@ export async function updateKlaviyoProfiles() {
         })
 
         if (!response.ok) {
+          logtail.error("Error sending letters");
           throw new Error("Error sending letters");
         }
       }
@@ -1020,6 +1025,7 @@ export async function updateKlaviyoProfiles() {
       }
     }
 
+    logtail.info("Klaviyo profiles updated");
   }
 }
 
