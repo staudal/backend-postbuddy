@@ -20,52 +20,47 @@ router.post('/segment', async (req, res) => {
   const { segment_id, first_name, last_name, email, address, zip, city, country, custom_variable } = req.body;
   if (!segment_id || !first_name || !last_name || !email || !address || !zip || !city || !country) return res.status(400).json({ error: MissingRequiredParametersError });
 
-  try {
-    const segment = await prisma.segment.findUnique({
-      where: { id: segment_id },
-    });
-    if (!segment) return res.status(404).json({ error: SegmentNotFoundError });
+  const segment = await prisma.segment.findUnique({
+    where: { id: segment_id },
+  });
+  if (!segment) return res.status(404).json({ error: SegmentNotFoundError });
 
-    // Return error if country is not supported
-    const validCountry = validateCountry(country);
-    if (!validCountry) return res.status(400).json({ error: CountryNotSupportedError });
+  // Return error if country is not supported
+  const validCountry = validateCountry(country);
+  if (!validCountry) return res.status(400).json({ error: CountryNotSupportedError });
 
-    const profile: ProfileToAdd = {
-      first_name,
-      last_name,
-      email,
-      address,
-      city,
-      zip_code: zip,
-      in_robinson: false,
-      segment_id: segment_id,
-    }
-
-    const isInRobinson = await checkIfProfileIsInRobinson(profile)
-    if (isInRobinson) {
-      profile.in_robinson = true
-    }
-
-    await prisma.profile.create({
-      data: {
-        first_name: profile.first_name,
-        last_name: profile.last_name,
-        email: profile.email,
-        address: profile.address,
-        city: profile.city,
-        zip_code: profile.zip_code,
-        in_robinson: profile.in_robinson,
-        segment_id: profile.segment_id,
-        custom_variable: custom_variable || null,
-        demo: segment.demo,
-      }
-    })
-
-    return res.status(201).json({ success: 'Profile added successfully' });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
+  const profile: ProfileToAdd = {
+    first_name,
+    last_name,
+    email,
+    address,
+    city,
+    zip_code: zip,
+    in_robinson: false,
+    segment_id: segment_id,
   }
+
+  const isInRobinson = await checkIfProfileIsInRobinson(profile)
+  if (isInRobinson) {
+    profile.in_robinson = true
+  }
+
+  await prisma.profile.create({
+    data: {
+      first_name: profile.first_name,
+      last_name: profile.last_name,
+      email: profile.email,
+      address: profile.address,
+      city: profile.city,
+      zip_code: profile.zip_code,
+      in_robinson: profile.in_robinson,
+      segment_id: profile.segment_id,
+      custom_variable: custom_variable || null,
+      demo: segment.demo,
+    }
+  })
+
+  return res.status(201).json({ success: 'Profile added successfully' });
 })
 
 router.post('/stripe', async (req, res) => {
@@ -73,69 +68,59 @@ router.post('/stripe', async (req, res) => {
   switch (payload.type) {
     case "checkout.session.completed": {
       if (payload.data.object.payment_status === "paid") {
-        try {
-          const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+        const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 
-          if (STRIPE_SECRET_KEY == null) {
-            return res.status(500).json({ error: InternalServerError });
-          }
-
-          const stripe = new Stripe(STRIPE_SECRET_KEY);
-
-          const subscriptionItems = await stripe.subscriptionItems.list({
-            limit: 3,
-            subscription: payload.data.object.subscription,
-          });
-
-          await prisma.subscription.create({
-            data: {
-              subscription_id: payload.data.object.subscription,
-              customer_id: payload.data.object.customer,
-              user_id: payload.data.object.client_reference_id,
-              subscription_item_id: subscriptionItems.data[0].id,
-              status: "active",
-            },
-          });
-        } catch (error: any) {
-          console.error(error);
+        if (STRIPE_SECRET_KEY == null) {
           return res.status(500).json({ error: InternalServerError });
         }
+
+        const stripe = new Stripe(STRIPE_SECRET_KEY);
+
+        const subscriptionItems = await stripe.subscriptionItems.list({
+          limit: 3,
+          subscription: payload.data.object.subscription,
+        });
+
+        await prisma.subscription.create({
+          data: {
+            subscription_id: payload.data.object.subscription,
+            customer_id: payload.data.object.customer,
+            user_id: payload.data.object.client_reference_id,
+            subscription_item_id: subscriptionItems.data[0].id,
+            status: "active",
+          },
+        });
       }
       break;
     }
     case "customer.subscription.deleted": {
-      try {
-        const subscription = await prisma.subscription.delete({
-          where: {
-            subscription_id: payload.data.object.id,
-          },
-        });
+      const subscription = await prisma.subscription.delete({
+        where: {
+          subscription_id: payload.data.object.id,
+        },
+      });
 
-        if (subscription == null) {
-          return res.status(404).json({ error: MissingSubscriptionError });
-        }
-
-        // stop all campaigns
-        const user = await prisma.user.findUnique({
-          where: {
-            id: subscription.user_id,
-          },
-        });
-        if (!user) return res.status(404).json({ error: UserNotFoundError });
-
-        await prisma.campaign.updateMany({
-          where: {
-            user_id: user.id,
-            demo: false,
-          },
-          data: {
-            status: "paused",
-          },
-        });
-      } catch (error: any) {
-        console.error(error);
-        return res.status(500).json({ error: InternalServerError });
+      if (subscription == null) {
+        return res.status(404).json({ error: MissingSubscriptionError });
       }
+
+      // stop all campaigns
+      const user = await prisma.user.findUnique({
+        where: {
+          id: subscription.user_id,
+        },
+      });
+      if (!user) return res.status(404).json({ error: UserNotFoundError });
+
+      await prisma.campaign.updateMany({
+        where: {
+          user_id: user.id,
+          demo: false,
+        },
+        data: {
+          status: "paused",
+        },
+      });
       break;
     }
   }

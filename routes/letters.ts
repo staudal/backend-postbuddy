@@ -52,13 +52,8 @@ router.post('/letters', async (req, res) => {
   const date = new Date();
   const dateString = `${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
 
-  try {
-    const pdf = await generatePdf(profiles, design.blob);
-    await sendPdfToPrintPartner(pdf, campaign.id, dateString)
-    await generateCsvAndSendToPrintPartner(profiles, campaign.id, dateString);
-    await billUserForLettersSent(profiles, user.id);
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: 'Kunne ikke generere PDF og sende til printpartner' });
-  }
+  const pdf = await generatePdf(profiles, design.blob);
+  await sendPdfToPrintPartner(pdf, campaign.id, dateString)
+  await generateCsvAndSendToPrintPartner(profiles, campaign.id, dateString);
+  await billUserForLettersSent(profiles, user.id);
 });

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../app';
-import { InsufficientRightsError, InternalServerError, MissingRequiredParametersError, UserAlreadyExistsError, UserNotFoundError } from '../errors';
+import { InsufficientRightsError, MissingRequiredParametersError, UserAlreadyExistsError, UserNotFoundError } from '../errors';
 import argon2 from 'argon2';
 import jwt from 'jsonwebtoken';
 
@@ -60,24 +60,19 @@ router.post('/users', async (req, res) => {
   const hashedPassword = await argon2.hash(password);
 
   // Create the new user
-  try {
-    await prisma.user.create({
-      data: {
-        first_name,
-        last_name,
-        company,
-        email,
-        password: hashedPassword,
-        role,
-        demo,
-      },
-    });
+  await prisma.user.create({
+    data: {
+      first_name,
+      last_name,
+      company,
+      email,
+      password: hashedPassword,
+      role,
+      demo,
+    },
+  });
 
-    return res.status(201).json({ success: 'User created successfully' });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  return res.status(201).json({ success: 'User created successfully' });
 })
 
 router.put(`/users/:id`, async (req, res) => {
@@ -103,49 +98,39 @@ router.put(`/users/:id`, async (req, res) => {
     return res.status(400).json({ error: UserAlreadyExistsError });
   }
 
-  try {
-    await prisma.user.update({
-      where: {
-        id
-      },
-      data: {
-        first_name,
-        last_name,
-        email,
-        company,
-        role,
-        demo,
-      },
-    });
+  await prisma.user.update({
+    where: {
+      id
+    },
+    data: {
+      first_name,
+      last_name,
+      email,
+      company,
+      role,
+      demo,
+    },
+  });
 
-    return res.status(200).json({ success: 'User updated successfully' });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  return res.status(200).json({ success: 'User updated successfully' });
 })
 
 router.post('/impersonate', async (req, res) => {
-  try {
-    const { userId } = req.body;
-    if (!userId) return res.status(400).json({ error: MissingRequiredParametersError });
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: MissingRequiredParametersError });
 
-    // Find the user to impersonate
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) return res.status(404).json({ error: UserNotFoundError });
+  // Find the user to impersonate
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return res.status(404).json({ error: UserNotFoundError });
 
-    // Create a JWT token for the impersonated user
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    );
+  // Create a JWT token for the impersonated user
+  const token = jwt.sign(
+    { userId: user.id, email: user.email, role: user.role },
+    JWT_SECRET,
+    { expiresIn: '24h' }
+  );
 
-    res.status(200).json({ success: 'Token created successfully', token });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
+  res.status(200).json({ success: 'Token created successfully', token });
 });
 
 

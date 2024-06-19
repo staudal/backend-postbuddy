@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../app';
-import { DesignNotFoundError, InternalServerError, MissingRequiredParametersError } from '../errors';
+import { DesignNotFoundError, MissingRequiredParametersError } from '../errors';
 import { del, put } from '@vercel/blob';
 
 const router = Router();
@@ -22,17 +22,12 @@ router.post('/new', async (req, res) => {
     contentType: 'text/plain',
   })
 
-  try {
-    await prisma.design.update({
-      where: { id: design_id },
-      data: { blob: blob.url },
-    })
+  await prisma.design.update({
+    where: { id: design_id },
+    data: { blob: blob.url },
+  })
 
-    return res.status(200).json({ success: "Design uploaded to vercel blob" });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  return res.status(200).json({ success: "Design uploaded to vercel blob" });
 })
 
 export default router;

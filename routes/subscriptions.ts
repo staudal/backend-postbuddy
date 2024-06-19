@@ -23,36 +23,31 @@ router.get('/new', async (req, res) => {
 
   const stripe = new Stripe(STRIPE_SECRET_KEY);
 
-  try {
-    const session = await stripe.checkout.sessions.create({
-      client_reference_id: user.id,
-      success_url: WEB_URL + '/dashboard/account',
-      cancel_url: WEB_URL + '/dashboard/account',
-      line_items: [
-        {
-          // Usage pricing
-          price:
-            process.env.NODE_ENV === "production"
-              ? "price_1PRJ8tHpzjX3OijIdjXrFLpL"
-              : "price_1PRJAOHpzjX3OijIVEQgCCBy",
-        },
-        {
-          // Monthly subscription
-          price:
-            process.env.NODE_ENV === "production"
-              ? "price_1PRJ9FHpzjX3OijI6YTk7syK"
-              : "price_1PRJABHpzjX3OijISTQv2EjE",
-          quantity: 1,
-        }
-      ],
-      mode: "subscription",
-    });
+  const session = await stripe.checkout.sessions.create({
+    client_reference_id: user.id,
+    success_url: WEB_URL + '/dashboard/account',
+    cancel_url: WEB_URL + '/dashboard/account',
+    line_items: [
+      {
+        // Usage pricing
+        price:
+          process.env.NODE_ENV === "production"
+            ? "price_1PRJ8tHpzjX3OijIdjXrFLpL"
+            : "price_1PRJAOHpzjX3OijIVEQgCCBy",
+      },
+      {
+        // Monthly subscription
+        price:
+          process.env.NODE_ENV === "production"
+            ? "price_1PRJ9FHpzjX3OijI6YTk7syK"
+            : "price_1PRJABHpzjX3OijISTQv2EjE",
+        quantity: 1,
+      }
+    ],
+    mode: "subscription",
+  });
 
-    return res.status(200).json({ url: session.url });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  return res.status(200).json({ url: session.url });
 })
 
 router.get('/portal', async (req, res) => {
@@ -64,27 +59,22 @@ router.get('/portal', async (req, res) => {
   });
   if (!subscription) return res.status(404).json({ error: MissingSubscriptionError });
 
-  try {
-    const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
-    if (!STRIPE_SECRET_KEY) {
-      throw new Error("Stripe secret key not found");
-    }
-
-    const stripe = new Stripe(STRIPE_SECRET_KEY);
-
-    if (!subscription.customer_id) {
-      throw new Error("Customer ID not found");
-    }
-    const session = await stripe.billingPortal.sessions.create({
-      customer: subscription.customer_id,
-      return_url: WEB_URL + `/dashboard/account`,
-    });
-
-    return res.status(200).json({ url: session.url });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
+  const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+  if (!STRIPE_SECRET_KEY) {
+    throw new Error("Stripe secret key not found");
   }
+
+  const stripe = new Stripe(STRIPE_SECRET_KEY);
+
+  if (!subscription.customer_id) {
+    throw new Error("Customer ID not found");
+  }
+  const session = await stripe.billingPortal.sessions.create({
+    customer: subscription.customer_id,
+    return_url: WEB_URL + `/dashboard/account`,
+  });
+
+  return res.status(200).json({ url: session.url });
 })
 
 router.get('/status', async (req, res) => {

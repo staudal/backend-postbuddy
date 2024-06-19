@@ -12,34 +12,28 @@ import { API_URL, config } from './constants';
 const prisma = new PrismaClient()
 
 export const loadUserWithShopifyIntegration = async (userId: string) => {
-  try {
-    return await prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        integrations: true,
-        campaigns: {
-          include: { segment: true },
-        },
+  return await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      integrations: true,
+      campaigns: {
+        include: { segment: true },
       },
-    });
-  } catch (error: any) {
-    console.error(`Error loading user with id ${userId}: ${error}`);
-    throw new Error(`Der opstod en fejl under indlæsning af bruger med id ${userId}: ${error.message}`);
-  }
+    },
+  });
 };
 
 export const getBulkOperationUrl = async (shop: string, token: string, apiId: string) => {
-  try {
-    const response = await fetch(
-      `https://${shop}.myshopify.com/admin/api/2021-10/graphql.json`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Shopify-Access-Token": token,
-        },
-        body: JSON.stringify({
-          query: `
+  const response = await fetch(
+    `https://${shop}.myshopify.com/admin/api/2021-10/graphql.json`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": token,
+      },
+      body: JSON.stringify({
+        query: `
           query {
             node(id: "${apiId}") {
               ... on BulkOperation {
@@ -49,150 +43,119 @@ export const getBulkOperationUrl = async (shop: string, token: string, apiId: st
             }
           }
         `,
-        }),
-      },
-    );
+      }),
+    },
+  );
 
-    const data: any = await response.json();
+  const data: any = await response.json();
 
-    if (!response.ok || !data.data?.node?.url) {
-      console.error(`Failed to fetch bulk operation URL: ${data.errors}`);
-      throw new Error(`Failed to fetch bulk operation URL: ${data.errors}`);
-    }
-
-    return data.data.node.url;
-  } catch (error: any) {
-    console.error(`Error fetching bulk operation URL: ${error}`);
-    throw new Error(`Der opstod en fejl under hentning af bulk operation URL: ${error.message}`);
+  if (!response.ok || !data.data?.node?.url) {
+    console.error(`Failed to fetch bulk operation URL: ${data.errors}`);
+    throw new Error(`Failed to fetch bulk operation URL: ${data.errors}`);
   }
+
+  return data.data.node.url;
 };
 
 export const fetchBulkOperationData = async (url: string) => {
-  try {
-    const orderResponse = await fetch(url);
+  const orderResponse = await fetch(url);
 
-    if (!orderResponse.ok || !orderResponse.body) {
-      console.error(`Failed to fetch bulk operation data: ${orderResponse.statusText}`);
-      throw new Error(`Failed to fetch bulk operation data: ${orderResponse.statusText}`);
-    }
-
-    const reader = orderResponse.body.getReader();
-    const decoder = new TextDecoder();
-    let orders: Order[] = [];
-    let responseBody = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      responseBody += decoder.decode(value, { stream: !done });
-
-      if (done) break;
-    }
-
-    const lines = responseBody.trim().split('\n');
-
-    for (const line of lines) {
-      if (line) {
-        try {
-          const order: Order = JSON.parse(line);
-          orders.push(order);
-        } catch (error: any) {
-          console.error(`Failed to parse order: ${error.message}`);
-        }
-      }
-    }
-
-    return orders;
-  } catch (error: any) {
-    console.error(`Error fetching bulk operation data: ${error}`);
-    throw new Error(`Der opstod en fejl under hentning af bulk operation data: ${error.message}`);
+  if (!orderResponse.ok || !orderResponse.body) {
+    console.error(`Failed to fetch bulk operation data: ${orderResponse.statusText}`);
+    throw new Error(`Failed to fetch bulk operation data: ${orderResponse.statusText}`);
   }
+
+  const reader = orderResponse.body.getReader();
+  const decoder = new TextDecoder();
+  let orders: Order[] = [];
+  let responseBody = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    responseBody += decoder.decode(value, { stream: !done });
+
+    if (done) break;
+  }
+
+  const lines = responseBody.trim().split('\n');
+
+  for (const line of lines) {
+    if (line) {
+      const order: Order = JSON.parse(line);
+      orders.push(order);
+    }
+  }
+
+  return orders;
 };
 export const saveOrders = async (userId: string, shopifyOrders: Order[]) => {
   const BATCH_SIZE = 20000;
-  try {
-    // Split shopifyOrders into smaller batches
-    for (let i = 0; i < shopifyOrders.length; i += BATCH_SIZE) {
-      const batch = shopifyOrders.slice(i, i + BATCH_SIZE);
+  // Split shopifyOrders into smaller batches
+  for (let i = 0; i < shopifyOrders.length; i += BATCH_SIZE) {
+    const batch = shopifyOrders.slice(i, i + BATCH_SIZE);
 
-      const existingDbOrders = await prisma.order.findMany({
-        where: {
-          user_id: userId,
-          order_id: { in: batch.map(shopifyOrder => shopifyOrder.id) },
-        },
+    const existingDbOrders = await prisma.order.findMany({
+      where: {
+        user_id: userId,
+        order_id: { in: batch.map(shopifyOrder => shopifyOrder.id) },
+      },
+    });
+
+    const newShopifyOrders = batch.filter(
+      (shopifyOrder) => !existingDbOrders.some((existingDbOrder) => existingDbOrder.order_id === shopifyOrder.id),
+    );
+
+    if (newShopifyOrders.length > 0) {
+      await prisma.order.createMany({
+        data: newShopifyOrders.map(newShopifyOrder => formatOrderData(newShopifyOrder, userId)),
+        skipDuplicates: true,
       });
-
-      const newShopifyOrders = batch.filter(
-        (shopifyOrder) => !existingDbOrders.some((existingDbOrder) => existingDbOrder.order_id === shopifyOrder.id),
-      );
-
-      if (newShopifyOrders.length > 0) {
-        await prisma.order.createMany({
-          data: newShopifyOrders.map(newShopifyOrder => formatOrderData(newShopifyOrder, userId)),
-          skipDuplicates: true,
-        });
-      }
     }
-    return shopifyOrders; // All orders processed
-  } catch (error: any) {
-    console.error(`Error saving orders for user ${userId}: ${error}`);
-    throw new Error(`Der opstod en fejl ved gemme ordre for bruger ${userId}: ${error.message}`);
   }
+  return shopifyOrders; // All orders processed
 };
 
 export const processOrdersForCampaigns = async (user: any, allOrders: PrismaOrder[]) => {
-  try {
-    const campaigns = user.campaigns;
-    const profilePromises = allOrders.map(allOrder => findAndUpdateProfile(allOrder, campaigns));
-    return await Promise.all(profilePromises);
-  } catch (error: any) {
-    console.error(`Error processing orders for campaigns: ${error}`);
-    throw new Error(`Der opstod en fejl under behandling af ordre for kampagner: ${error.message}`);
-  }
+  const campaigns = user.campaigns;
+  const profilePromises = allOrders.map(allOrder => findAndUpdateProfile(allOrder, campaigns));
+  return await Promise.all(profilePromises);
 };
 
 export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any[]) => {
   for (const campaign of campaigns) {
-    try {
-      const campaignStartDate = new Date(campaign.start_date);
-      const campaignEndDate = new Date(campaignStartDate);
-      campaignEndDate.setDate(campaignEndDate.getDate() + 60);
+    const campaignStartDate = new Date(campaign.start_date);
+    const campaignEndDate = new Date(campaignStartDate);
+    campaignEndDate.setDate(campaignEndDate.getDate() + 60);
 
-      const shopifyOrderCreatedAt = new Date(allOrder.created_at);
+    const shopifyOrderCreatedAt = new Date(allOrder.created_at);
 
-      if (shopifyOrderCreatedAt >= campaignStartDate && shopifyOrderCreatedAt <= campaignEndDate) {
-        const profiles = await prisma.profile.findMany({
-          where: buildProfileWhereClause(allOrder, campaign.segment_id),
-          include: { orders: true },
-        });
+    if (shopifyOrderCreatedAt >= campaignStartDate && shopifyOrderCreatedAt <= campaignEndDate) {
+      const profiles = await prisma.profile.findMany({
+        where: buildProfileWhereClause(allOrder, campaign.segment_id),
+        include: { orders: true },
+      });
 
-        if (profiles.length > 0) {
-          for (const profile of profiles) {
-            const existingDbOrder = await prisma.orderProfile.findFirst({
-              where: {
-                order_id: allOrder.id,
-                profile_id: profile.id,
-              },
-            });
+      if (profiles.length > 0) {
+        for (const profile of profiles) {
+          const existingDbOrder = await prisma.orderProfile.findFirst({
+            where: {
+              order_id: allOrder.id,
+              profile_id: profile.id,
+            },
+          });
 
-            if (existingDbOrder) {
-              continue;
-            }
-
-            try {
-              await prisma.orderProfile.create({
-                data: {
-                  order_id: allOrder.id,
-                  profile_id: profile.id,
-                },
-              });
-            } catch (error: any) {
-              console.error(`Error creating orderProfile for order ${allOrder.id} and profile ${profile.id}: ${error.message}`);
-            }
+          if (existingDbOrder) {
+            continue;
           }
+
+          await prisma.orderProfile.create({
+            data: {
+              order_id: allOrder.id,
+              profile_id: profile.id,
+            },
+          });
         }
       }
-    } catch (error: any) {
-      console.error(`Error finding and updating profile for order ${allOrder.id}: ${error}`);
     }
   }
 };
@@ -219,65 +182,54 @@ export const buildProfileWhereClause = (allOrder: PrismaOrder, segmentId: string
 };
 
 export const formatOrderData = (newShopifyOrder: Order, userId: string) => {
-  try {
-    return {
-      created_at: newShopifyOrder.createdAt,
-      order_id: newShopifyOrder.id,
-      user_id: userId,
-      amount: newShopifyOrder.totalPriceSet ? parseFloat(newShopifyOrder.totalPriceSet.shopMoney.amount) : 0,
-      discount_codes: newShopifyOrder.discountCodes,
-      first_name: newShopifyOrder.customer?.firstName?.toLowerCase() || "",
-      last_name: newShopifyOrder.customer?.lastName?.toLowerCase() || "",
-      email: newShopifyOrder.customer?.email?.toLowerCase() || "",
-      zip_code: newShopifyOrder.customer?.addresses?.[0]?.zip || "",
-      address: newShopifyOrder.customer?.addresses?.[0]?.address1?.toLowerCase() || "",
-    };
-  } catch (error: any) {
-    console.error(`Error formatting order data: ${error}`);
-    throw new Error(`Error formatting order data: ${error.message}`);
-  }
+  return {
+    created_at: newShopifyOrder.createdAt,
+    order_id: newShopifyOrder.id,
+    user_id: userId,
+    amount: newShopifyOrder.totalPriceSet ? parseFloat(newShopifyOrder.totalPriceSet.shopMoney.amount) : 0,
+    discount_codes: newShopifyOrder.discountCodes,
+    first_name: newShopifyOrder.customer?.firstName?.toLowerCase() || "",
+    last_name: newShopifyOrder.customer?.lastName?.toLowerCase() || "",
+    email: newShopifyOrder.customer?.email?.toLowerCase() || "",
+    zip_code: newShopifyOrder.customer?.addresses?.[0]?.zip || "",
+    address: newShopifyOrder.customer?.addresses?.[0]?.address1?.toLowerCase() || "",
+  };
 };
 
 
 export const getAddressComponents = (addressFull: string) => {
-  try {
-    const addressMatch = addressFull.match(/^(\D*\d+)/) || [];
-    return addressMatch[0] || addressFull;
-  } catch (error: any) {
-    console.error(`Error getting address components: ${error}`);
-    throw new Error(`Error getting address components: ${error.message}`);
-  }
+  const addressMatch = addressFull.match(/^(\D*\d+)/) || [];
+  return addressMatch[0] || addressFull;
 };
 
 
 export async function triggerShopifyBulkQueries() {
-  try {
-    const users = await prisma.user.findMany({
-      where: {
-        integrations: {
-          some: {
-            type: "shopify",
-          },
+  const users = await prisma.user.findMany({
+    where: {
+      integrations: {
+        some: {
+          type: "shopify",
         },
       },
-      include: {
-        integrations: true,
-        campaigns: true,
-      },
-    });
+    },
+    include: {
+      integrations: true,
+      campaigns: true,
+    },
+  });
 
-    if (users.length === 0) {
-      console.error("No users found with Shopify integration");
-      return;
-    }
+  if (users.length === 0) {
+    console.error("No users found with Shopify integration");
+    return;
+  }
 
-    const currentDate = new Date();
-    const currentDateMinus365Days = new Date(currentDate);
-    currentDateMinus365Days.setDate(currentDate.getDate() - 365);
-    const dateOnly = currentDateMinus365Days.toISOString().split('T')[0];
-    const shopifyApiVersion = '2021-10'; // Ideally, this should be a configurable constant
+  const currentDate = new Date();
+  const currentDateMinus365Days = new Date(currentDate);
+  currentDateMinus365Days.setDate(currentDate.getDate() - 365);
+  const dateOnly = currentDateMinus365Days.toISOString().split('T')[0];
+  const shopifyApiVersion = '2021-10'; // Ideally, this should be a configurable constant
 
-    const shopifyBulkOperationQuery = `
+  const shopifyBulkOperationQuery = `
       mutation {
         bulkOperationRunQuery(
           query: """
@@ -323,74 +275,60 @@ export async function triggerShopifyBulkQueries() {
       }
     `;
 
-    const userPromises = users.map(async (user) => {
-      try {
-        const shopifyIntegration = user.integrations.find(
-          (integration) => integration.type === 'shopify'
-        );
+  const userPromises = users.map(async (user) => {
+    const shopifyIntegration = user.integrations.find(
+      (integration) => integration.type === 'shopify'
+    );
 
-        if (!shopifyIntegration || !shopifyIntegration.token) {
-          console.error(`User ${user.id} does not have a valid Shopify integration`);
-          return Promise.resolve();
-        }
+    if (!shopifyIntegration || !shopifyIntegration.token) {
+      console.error(`User ${user.id} does not have a valid Shopify integration`);
+      return Promise.resolve();
+    }
 
-        const shopifyApiUrl = `https://${shopifyIntegration.shop}.myshopify.com/admin/api/${shopifyApiVersion}/graphql.json`;
-        const shopifyApiHeaders = {
-          'Content-Type': 'application/json',
-          'X-Shopify-Access-Token': shopifyIntegration.token,
-        };
+    const shopifyApiUrl = `https://${shopifyIntegration.shop}.myshopify.com/admin/api/${shopifyApiVersion}/graphql.json`;
+    const shopifyApiHeaders = {
+      'Content-Type': 'application/json',
+      'X-Shopify-Access-Token': shopifyIntegration.token,
+    };
 
-        const response = await fetch(shopifyApiUrl, {
-          method: 'POST',
-          headers: shopifyApiHeaders,
-          body: JSON.stringify({ query: shopifyBulkOperationQuery }),
-        });
-
-        const data: any = await response.json();
-
-        if (!response.ok) {
-          console.error(`Failed to create bulk query for user ${user.id}: ${data.errors}`);
-        }
-      } catch (error: any) {
-        console.error(`Error creating bulk query for user ${user.id}: ${error}`);
-        throw new Error(`Error creating bulk query for user ${user.id}: ${error.message}`);
-      }
+    const response = await fetch(shopifyApiUrl, {
+      method: 'POST',
+      headers: shopifyApiHeaders,
+      body: JSON.stringify({ query: shopifyBulkOperationQuery }),
     });
 
-    await Promise.allSettled(userPromises);
-  } catch (error: any) {
-    console.error(`Error triggering Shopify bulk queries: ${error}`);
-    throw new Error(`Error triggering Shopify bulk queries: ${error.message}`);
-  }
+    const data: any = await response.json();
+
+    if (!response.ok) {
+      console.error(`Failed to create bulk query for user ${user.id}: ${data.errors}`);
+    }
+  });
+
+  await Promise.allSettled(userPromises);
 }
 
 export async function billUserForLettersSent(profilesLength: number, user_id: string) {
-  try {
-    const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
-    if (!STRIPE_SECRET_KEY) {
-      throw new Error('Missing Stripe secret key');
-    }
+  const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+  if (!STRIPE_SECRET_KEY) {
+    throw new Error('Missing Stripe secret key');
+  }
 
-    const stripe = new Stripe(STRIPE_SECRET_KEY)
-    const subscription = await prisma.subscription.findFirst({
-      where: { user_id },
-    });
-    if (!subscription) {
-      throw new Error(MissingSubscriptionError);
-    }
+  const stripe = new Stripe(STRIPE_SECRET_KEY)
+  const subscription = await prisma.subscription.findFirst({
+    where: { user_id },
+  });
+  if (!subscription) {
+    throw new Error(MissingSubscriptionError);
+  }
 
-    const usageRecord = await stripe.subscriptionItems.createUsageRecord(subscription.subscription_item_id, {
-      quantity: profilesLength,
-      timestamp: Math.floor(Date.now() / 1000),
-      action: 'increment',
-    });
+  const usageRecord = await stripe.subscriptionItems.createUsageRecord(subscription.subscription_item_id, {
+    quantity: profilesLength,
+    timestamp: Math.floor(Date.now() / 1000),
+    action: 'increment',
+  });
 
-    if (!usageRecord) {
-      throw new Error('Failed to bill user for letters sent');
-    }
-  } catch (error: any) {
-    console.error(`Error billing user for letters sent: ${error}`);
-    throw new Error(`Der opstod en fejl under fakturering af bruger for sendte breve: ${error.message}`);
+  if (!usageRecord) {
+    throw new Error('Failed to bill user for letters sent');
   }
 }
 
@@ -676,21 +614,17 @@ export async function validateKlaviyoApiKeyForUser(user: User) {
 }
 
 export async function fetchKlaviyoSegments(apiKey: string) {
-  try {
-    const options = {
-      method: "GET",
-      headers: {
-        accept: "application/json",
-        revision: "2024-02-15",
-        Authorization: `Klaviyo-API-Key ${apiKey}`,
-      },
-    };
-    const response = await fetch("https://a.klaviyo.com/api/segments", options);
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    throw new Error("Error fetching Klaviyo segments");
-  }
+  const options = {
+    method: "GET",
+    headers: {
+      accept: "application/json",
+      revision: "2024-02-15",
+      Authorization: `Klaviyo-API-Key ${apiKey}`,
+    },
+  };
+  const response = await fetch("https://a.klaviyo.com/api/segments", options);
+  const data = await response.json();
+  return data;
 }
 
 export async function getKlaviyoSegmentProfiles(
@@ -837,93 +771,76 @@ export function generateIdText(engine: CreativeEngine, profile: Profile, idText:
 }
 
 export async function generatePdf(profiles: Profile[], designBlob: string) {
-  console.log("Generating PDF");
-  try {
-    const mergedPdf = await PDFDocument.create();
-    await CreativeEngine.init(config).then(async (engine) => {
-      console.log("Engine initialized");
-      const scene = await engine.scene.loadFromURL(designBlob);
-      const pages = engine.scene.getPages();
-      const pageWidth = engine.block.getWidth(pages[0]);
-      const pageHeight = engine.block.getHeight(pages[0]);
-      const idText = engine.block.create("text");
-      generateIdBlock(idText, engine, pageWidth, pageHeight, pages);
-      generateBleedLines(engine, pages, pageWidth, pageHeight);
-      for (const profile of profiles) {
-        updateVariables(engine, profile);
-        generateIdText(engine, profile, idText, pages);
-        const { MimeType } = CESDK;
-        const pdfBlob = await engine.block.export(scene, MimeType.Pdf);
-        const pdfBuffer = Buffer.from(await pdfBlob.arrayBuffer());
-        const pdf = await PDFDocument.load(pdfBuffer);
-        const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-        copiedPages.forEach((page) => mergedPdf.addPage(page));
-      }
-    });
-    const pdfArray = await mergedPdf.save();
-    const pdf = Buffer.from(pdfArray);
-    return pdf;
-  } catch (error: any) {
-    console.error(`Error generating PDF: ${error}`);
-    throw new Error(`Error generating PDF: ${error.message}`);
-  }
+  const mergedPdf = await PDFDocument.create();
+  await CreativeEngine.init(config).then(async (engine) => {
+    const scene = await engine.scene.loadFromURL(designBlob);
+    const pages = engine.scene.getPages();
+    const pageWidth = engine.block.getWidth(pages[0]);
+    const pageHeight = engine.block.getHeight(pages[0]);
+    const idText = engine.block.create("text");
+    generateIdBlock(idText, engine, pageWidth, pageHeight, pages);
+    generateBleedLines(engine, pages, pageWidth, pageHeight);
+    for (const profile of profiles) {
+      updateVariables(engine, profile);
+      generateIdText(engine, profile, idText, pages);
+      const { MimeType } = CESDK;
+      const pdfBlob = await engine.block.export(scene, MimeType.Pdf);
+      const pdfBuffer = Buffer.from(await pdfBlob.arrayBuffer());
+      const pdf = await PDFDocument.load(pdfBuffer);
+      const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+      copiedPages.forEach((page) => mergedPdf.addPage(page));
+    }
+  });
+  const pdfArray = await mergedPdf.save();
+  const pdf = Buffer.from(pdfArray);
+  return pdf;
 }
 
 export async function sendPdfToPrintPartner(pdf: Buffer, campaign_id: string, dateString: string) {
-  try {
-    const client = new Client();
-    await client.connect({
-      host: process.env.SFTP_HOST,
-      port: parseInt(process.env.SFTP_PORT as string),
-      username: process.env.SFTP_USER,
-      password: process.env.SFTP_PASSWORD,
-    });
+  const client = new Client();
+  await client.connect({
+    host: process.env.SFTP_HOST,
+    port: parseInt(process.env.SFTP_PORT as string),
+    username: process.env.SFTP_USER,
+    password: process.env.SFTP_PASSWORD,
+  });
 
-    // Create folder if not exists
-    await client.mkdir(`/files/til-distplus/${dateString}`, true);
-    await client.put(
-      pdf,
-      `/files/til-distplus/${dateString}/kampagne-${campaign_id}.pdf`
-    )
+  // Create folder if not exists
+  await client.mkdir(`/files/til-distplus/${dateString}`, true);
+  await client.put(
+    pdf,
+    `/files/til-distplus/${dateString}/kampagne-${campaign_id}.pdf`
+  )
 
-    await client.end();
-  } catch (error: any) {
-    console.error(`Error sending PDF to print partner: ${error}`);
-    throw new Error(`Error sending PDF to print partner: ${error.message}`);
-  }
+  await client.end();
 }
 
 export async function generateCsvAndSendToPrintPartner(profiles: Profile[], campaign_id: string, dateString: string) {
-  try {
-    const client = new Client();
-    await client.connect({
-      host: process.env.SFTP_HOST,
-      port: parseInt(process.env.SFTP_PORT as string),
-      username: process.env.SFTP_USER,
-      password: process.env.SFTP_PASSWORD,
-    });
+  const client = new Client();
+  await client.connect({
+    host: process.env.SFTP_HOST,
+    port: parseInt(process.env.SFTP_PORT as string),
+    username: process.env.SFTP_USER,
+    password: process.env.SFTP_PASSWORD,
+  });
 
-    // Create folder if not exists
-    await client.mkdir(`/files/til-distplus/${dateString}`, true);
+  // Create folder if not exists
+  await client.mkdir(`/files/til-distplus/${dateString}`, true);
 
-    let csvData = "fullname,address,zip_city,id\n"; // CSV headers
-    profiles.forEach((profile) => {
-      csvData += `"${profile.first_name} ${profile.last_name}","${profile.address}","${profile.zip_code} ${profile.city}","${profile.id.slice(-5)}"\n`;
-    });
-    // Convert the CSV data to a Buffer
-    const csvBuffer = Buffer.from(csvData);
+  let csvData = "fullname,address,zip_city,id\n"; // CSV headers
+  profiles.forEach((profile) => {
+    csvData += `"${profile.first_name} ${profile.last_name}","${profile.address}","${profile.zip_code} ${profile.city}","${profile.id.slice(-5)}"\n`;
+  });
+  // Convert the CSV data to a Buffer
+  const csvBuffer = Buffer.from(csvData);
 
-    // Upload the CSV data to the SFTP server
-    await client.put(
-      csvBuffer,
-      `/files/til-distplus/${dateString}/kampagne-${campaign_id}.csv`
-    );
+  // Upload the CSV data to the SFTP server
+  await client.put(
+    csvBuffer,
+    `/files/til-distplus/${dateString}/kampagne-${campaign_id}.csv`
+  );
 
-    await client.end();
-  } catch (error: any) {
-    console.error(`Error sending CSV to print partner: ${error}`);
-    throw new Error(`Error sending CSV to print partner: ${error.message}`);
-  }
+  await client.end();
 }
 
 export async function activateScheduledCampaigns() {

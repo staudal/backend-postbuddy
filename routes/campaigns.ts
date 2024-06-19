@@ -15,35 +15,30 @@ router.get('/', async (req, res) => {
   });
   if (!dbUser) return UserNotFoundError;
 
-  try {
-    const campaigns = await prisma.campaign.findMany({
-      where: { user_id: dbUser.id, demo: dbUser.demo },
-      include: {
-        segment: {
-          include: {
-            profiles: {
-              include: {
-                orders: {
-                  include: {
-                    order: true
-                  }
+  const campaigns = await prisma.campaign.findMany({
+    where: { user_id: dbUser.id, demo: dbUser.demo },
+    include: {
+      segment: {
+        include: {
+          profiles: {
+            include: {
+              orders: {
+                include: {
+                  order: true
                 }
               }
             }
-          },
+          }
         },
-        design: true,
       },
-      orderBy: {
-        created_at: "desc",
-      },
-    });
+      design: true,
+    },
+    orderBy: {
+      created_at: "desc",
+    },
+  });
 
-    res.json(campaigns);
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  res.json(campaigns);
 })
 
 router.post('/', async (req, res) => {
@@ -91,12 +86,7 @@ router.post('/', async (req, res) => {
 
   // Bill the user if the campaign is not a demo
   if (!segment.demo) {
-    try {
-      await billUserForLettersSent(profiles.length, user_id)
-    } catch (error: any) {
-      console.error(error);
-      return res.status(500).json({ error: InternalServerError });
-    }
+    await billUserForLettersSent(profiles.length, user_id)
   }
 
   // If the campaign is scheduled for a future date, update the status to "scheduled"
@@ -157,20 +147,15 @@ router.put('/:id', async (req, res) => {
 
   if (campaign.user_id !== user_id) return InsufficientRightsError;
 
-  try {
-    await prisma.campaign.update({
-      where: { id: id },
-      data: {
-        status: status || campaign.status,
-        design_id: design_id || campaign.design_id,
-      }
-    });
+  await prisma.campaign.update({
+    where: { id: id },
+    data: {
+      status: status || campaign.status,
+      design_id: design_id || campaign.design_id,
+    }
+  });
 
-    return res.status(200).json({ success: "Kampagnen er blevet opdateret" });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  return res.status(200).json({ success: "Kampagnen er blevet opdateret" });
 })
 
 router.delete('/:id', async (req, res) => {
@@ -185,16 +170,11 @@ router.delete('/:id', async (req, res) => {
 
   if (campaign.user_id !== user_id) return InsufficientRightsError;
 
-  try {
-    await prisma.campaign.delete({
-      where: { id: id },
-    });
+  await prisma.campaign.delete({
+    where: { id: id },
+  });
 
-    return res.status(200).json({ success: "Kampagnen er blevet slettet" });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  return res.status(200).json({ success: "Kampagnen er blevet slettet" });
 })
 
 router.post('/test-letter', async (req, res) => {
@@ -214,59 +194,49 @@ router.post('/test-letter', async (req, res) => {
   if (!user.address || !user.zip_code || !user.city) MissingAddressError
 
   // Bill the user for the letters sent
-  try {
-    await billUserForLettersSent(1, user_id)
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: error.message });
-  }
+  await billUserForLettersSent(1, user_id)
 
-  try {
-    let format = "";
-    const pdfBuffer = await generateTestDesign(design.blob, format);
+  let format = "";
+  const pdfBuffer = await generateTestDesign(design.blob, format);
 
-    const client = new Client();
-    await client.connect({
-      host: process.env.SFTP_HOST,
-      port: parseInt(process.env.SFTP_PORT as string),
-      username: process.env.SFTP_USER,
-      password: process.env.SFTP_PASSWORD,
-    });
+  const client = new Client();
+  await client.connect({
+    host: process.env.SFTP_HOST,
+    port: parseInt(process.env.SFTP_PORT as string),
+    username: process.env.SFTP_USER,
+    password: process.env.SFTP_PASSWORD,
+  });
 
-    // Create datestring e.g. 15-05-2024
-    const date = new Date();
-    const dateString = `${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
+  // Create datestring e.g. 15-05-2024
+  const date = new Date();
+  const dateString = `${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
 
-    // Create folder if not exists
-    await client.mkdir(`/files/til-distplus/${dateString}`, true);
+  // Create folder if not exists
+  await client.mkdir(`/files/til-distplus/${dateString}`, true);
 
-    // Upload the PDF to the SFTP server
-    await client.put(
-      pdfBuffer,
-      `/files/til-distplus/${dateString}/${format}_${user.id.slice(-5)}_1.pdf`,
-    );
+  // Upload the PDF to the SFTP server
+  await client.put(
+    pdfBuffer,
+    `/files/til-distplus/${dateString}/${format}_${user.id.slice(-5)}_1.pdf`,
+  );
 
-    // Generate csv data
-    let csvData = "fullname,company,address,zip_city,id\n"; // CSV headers
-    csvData += `"${user.first_name} ${user.last_name}","${user.company}","${user.address}","${user.zip_code} ${user.city}","${user.id.slice(-5)}"\n`;
+  // Generate csv data
+  let csvData = "fullname,company,address,zip_city,id\n"; // CSV headers
+  csvData += `"${user.first_name} ${user.last_name}","${user.company}","${user.address}","${user.zip_code} ${user.city}","${user.id.slice(-5)}"\n`;
 
-    // Convert the CSV data to a Buffer
-    const csvBuffer = Buffer.from(csvData);
+  // Convert the CSV data to a Buffer
+  const csvBuffer = Buffer.from(csvData);
 
-    // Upload the CSV data to the SFTP server
-    await client.put(
-      csvBuffer,
-      `/files/til-distplus/${dateString}/${format}_${user.id.slice(-5)}_1.csv`,
-    );
+  // Upload the CSV data to the SFTP server
+  await client.put(
+    csvBuffer,
+    `/files/til-distplus/${dateString}/${format}_${user.id.slice(-5)}_1.csv`,
+  );
 
-    // Close the SFTP connection
-    await client.end();
+  // Close the SFTP connection
+  await client.end();
 
-    return res.status(201).json({ success: "Testbrevet er blevet sendt til produktion" });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  return res.status(201).json({ success: "Testbrevet er blevet sendt til produktion" });
 })
 
 export default router;

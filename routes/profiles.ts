@@ -9,34 +9,29 @@ router.get('/', async (req, res) => {
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
-  try {
-    const segments = await prisma.segment.findMany({
-      where: {
-        user_id
-      },
-      select: {
-        id: true,
-        name: true,
-        profiles: {
-          select: {
-            id: true,
-            email: true,
-            first_name: true,
-            last_name: true,
-            address: true,
-            zip_code: true,
-            city: true,
-            country: true,
-          },
+  const segments = await prisma.segment.findMany({
+    where: {
+      user_id
+    },
+    select: {
+      id: true,
+      name: true,
+      profiles: {
+        select: {
+          id: true,
+          email: true,
+          first_name: true,
+          last_name: true,
+          address: true,
+          zip_code: true,
+          city: true,
+          country: true,
         },
       },
-    });
+    },
+  });
 
-    res.json(segments);
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  res.json(segments);
 })
 
 router.delete('/:id', async (req, res) => {
@@ -57,16 +52,11 @@ router.delete('/:id', async (req, res) => {
 
   if (!profile) return res.status(404).json({ error: ProfilesNotFoundError });
 
-  try {
-    await prisma.profile.delete({
-      where: { id },
-    });
+  await prisma.profile.delete({
+    where: { id },
+  });
 
-    res.status(200).json({ success: 'Profilen blev slettet' });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  res.status(200).json({ success: 'Profilen blev slettet' });
 })
 
 router.put('/:id', async (req, res) => {
@@ -86,26 +76,21 @@ router.put('/:id', async (req, res) => {
 
   if (!profile) return res.status(404).json({ error: ProfilesNotFoundError });
 
-  try {
-    await prisma.profile.update({
-      where: { id },
-      data: {
-        email,
-        first_name,
-        last_name,
-        address,
-        zip_code,
-        city,
-        country,
-        custom_variable
-      },
-    });
+  await prisma.profile.update({
+    where: { id },
+    data: {
+      email,
+      first_name,
+      last_name,
+      address,
+      zip_code,
+      city,
+      country,
+      custom_variable
+    },
+  });
 
-    res.status(200).json({ success: 'Profilen blev opdateret' });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  res.status(200).json({ success: 'Profilen blev opdateret' });
 })
 
 router.get('/webhook', async (req, res) => {

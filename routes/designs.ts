@@ -16,22 +16,17 @@ router.get('/', async (req, res) => {
   });
   if (!dbUser) return res.status(404).json({ error: UserNotFoundError });
 
-  try {
-    const designs = await prisma.design.findMany({
-      where: {
-        user_id: dbUser.id,
-        demo: dbUser.demo,
-      },
-      include: {
-        campaigns: true,
-      },
-    });
+  const designs = await prisma.design.findMany({
+    where: {
+      user_id: dbUser.id,
+      demo: dbUser.demo,
+    },
+    include: {
+      campaigns: true,
+    },
+  });
 
-    res.json(designs);
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  res.json(designs);
 })
 
 router.get('/:id', async (req, res) => {
@@ -56,176 +51,151 @@ router.get('/:id', async (req, res) => {
 })
 
 router.post('/duplicate', async (req, res) => {
-  try {
-    const { user_id, design_id } = req.body;
-    if (!user_id || !design_id) return res.status(400).json({ error: MissingRequiredParametersError });
+  const { user_id, design_id } = req.body;
+  if (!user_id || !design_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
-    const user = await prisma.user.findUnique({
-      where: { id: user_id },
-    });
-    if (!user) return res.status(404).json({ error: UserNotFoundError });
+  const user = await prisma.user.findUnique({
+    where: { id: user_id },
+  });
+  if (!user) return res.status(404).json({ error: UserNotFoundError });
 
-    const design = await prisma.design.findUnique({
-      where: { id: design_id },
-    });
-    if (!design) return res.status(404).json({ error: DesignNotFoundError });
+  const design = await prisma.design.findUnique({
+    where: { id: design_id },
+  });
+  if (!design) return res.status(404).json({ error: DesignNotFoundError });
 
-    await prisma.design.create({
-      data: {
-        name: design.name,
-        blob: design.blob,
-        user_id: user.id,
-        thumbnail: design.thumbnail,
-        format: design.format,
-        demo: design.demo,
-      },
-    });
+  await prisma.design.create({
+    data: {
+      name: design.name,
+      blob: design.blob,
+      user_id: user.id,
+      thumbnail: design.thumbnail,
+      format: design.format,
+      demo: design.demo,
+    },
+  });
 
-    return res.status(201).json({ success: 'Design duplikeret' });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  return res.status(201).json({ success: 'Design duplikeret' });
 })
 
 router.post('/', async (req, res) => {
-  try {
-    const { user_id, name, format } = req.body;
-    if (!name || !user_id || !format) return res.status(400).json({ error: MissingRequiredParametersError });
+  const { user_id, name, format } = req.body;
+  if (!name || !user_id || !format) return res.status(400).json({ error: MissingRequiredParametersError });
 
-    const user = await prisma.user.findUnique({
-      where: { id: user_id },
-    });
-    if (!user) return res.status(404).json({ error: UserNotFoundError });
+  const user = await prisma.user.findUnique({
+    where: { id: user_id },
+  });
+  if (!user) return res.status(404).json({ error: UserNotFoundError });
 
-    const newDesign = await prisma.design.create({
-      data: {
-        name,
-        format,
-        user_id: user.id,
-        demo: user.demo,
-      },
-    });
+  const newDesign = await prisma.design.create({
+    data: {
+      name,
+      format,
+      user_id: user.id,
+      demo: user.demo,
+    },
+  });
 
-    // We have to return the design because its ID is used for redirection in the frontend
-    return res.status(201).json({ success: 'Design oprettet', design: newDesign });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  // We have to return the design because its ID is used for redirection in the frontend
+  return res.status(201).json({ success: 'Design oprettet', design: newDesign });
 })
 
 router.put('/:id', async (req, res) => {
-  try {
-    const { user_id, name } = req.body;
-    const { id } = req.params;
-    if (!name || !user_id) return res.status(400).json({ error: MissingRequiredParametersError });
+  const { user_id, name } = req.body;
+  const { id } = req.params;
+  if (!name || !user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
-    const user = await prisma.user.findUnique({
-      where: { id: user_id },
-    });
-    if (!user) return res.status(404).json({ error: UserNotFoundError });
+  const user = await prisma.user.findUnique({
+    where: { id: user_id },
+  });
+  if (!user) return res.status(404).json({ error: UserNotFoundError });
 
-    const design = await prisma.design.findUnique({
-      where: { id },
-    });
-    if (!design) return res.status(404).json({ error: DesignNotFoundError });
+  const design = await prisma.design.findUnique({
+    where: { id },
+  });
+  if (!design) return res.status(404).json({ error: DesignNotFoundError });
 
-    await prisma.design.update({
-      where: { id },
-      data: {
-        name
-      },
-    });
+  await prisma.design.update({
+    where: { id },
+    data: {
+      name
+    },
+  });
 
-    return res.json({ success: 'Design opdateret' });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  return res.json({ success: 'Design opdateret' });
 })
 
 router.delete('/:id', async (req, res) => {
-  try {
-    const { user_id } = req.body;
-    const { id } = req.params;
-    if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
+  const { user_id } = req.body;
+  const { id } = req.params;
+  if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
-    const user = await prisma.user.findUnique({
-      where: { id: user_id },
-    });
-    if (!user) return res.status(404).json({ error: UserNotFoundError });
+  const user = await prisma.user.findUnique({
+    where: { id: user_id },
+  });
+  if (!user) return res.status(404).json({ error: UserNotFoundError });
 
-    // Check if design belongs to user
-    const userDesign = await prisma.design.findFirst({
-      where: {
-        id,
-        user_id: user.id,
-      },
-    });
-    if (!userDesign) return res.status(404).json({ error: DesignNotFoundError });
+  // Check if design belongs to user
+  const userDesign = await prisma.design.findFirst({
+    where: {
+      id,
+      user_id: user.id,
+    },
+  });
+  if (!userDesign) return res.status(404).json({ error: DesignNotFoundError });
 
-    const design = await prisma.design.findUnique({
-      where: { id },
-    });
-    if (!design) return res.status(404).json({ error: DesignNotFoundError });
+  const design = await prisma.design.findUnique({
+    where: { id },
+  });
+  if (!design) return res.status(404).json({ error: DesignNotFoundError });
 
-    await prisma.design.delete({
-      where: { id },
-    });
+  await prisma.design.delete({
+    where: { id },
+  });
 
-    return res.json({ success: 'Design slettet' });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  return res.json({ success: 'Design slettet' });
 })
 
 router.post('/thumbnail', async (req, res) => {
-  try {
-    const { user_id, design_id, thumbnail } = req.body;
-    if (!user_id || !design_id || !thumbnail) return res.status(400).json({ error: MissingRequiredParametersError });
+  const { user_id, design_id, thumbnail } = req.body;
+  if (!user_id || !design_id || !thumbnail) return res.status(400).json({ error: MissingRequiredParametersError });
 
-    const user = await prisma.user.findUnique({
-      where: { id: user_id },
+  const user = await prisma.user.findUnique({
+    where: { id: user_id },
+  });
+  if (!user) return res.status(404).json({ error: UserNotFoundError });
+
+  const design = await prisma.design.findUnique({
+    where: { id: design_id },
+  });
+  if (!design) return res.status(404).json({ error: DesignNotFoundError });
+
+  if (design && design.thumbnail) {
+    await del(design.thumbnail);
+    const newThumbnail = await put(`thumbnails/${design.id}-thumbnail.jpg`, thumbnail, {
+      access: "public",
+      contentType: "image/jpeg",
     });
-    if (!user) return res.status(404).json({ error: UserNotFoundError });
-
-    const design = await prisma.design.findUnique({
-      where: { id: design_id },
+    await prisma.design.update({
+      where: { id: design.id },
+      data: {
+        thumbnail: newThumbnail.url,
+      },
     });
-    if (!design) return res.status(404).json({ error: DesignNotFoundError });
-
-    if (design && design.thumbnail) {
-      await del(design.thumbnail);
-      const newThumbnail = await put(`thumbnails/${design.id}-thumbnail.jpg`, thumbnail, {
-        access: "public",
-        contentType: "image/jpeg",
-      });
-      await prisma.design.update({
-        where: { id: design.id },
-        data: {
-          thumbnail: newThumbnail.url,
-        },
-      });
-    } else {
-      const newThumbnail = await put(`thumbnails/${design.id}-thumbnail.jpg`, thumbnail, {
-        access: "public",
-        contentType: "image/jpeg",
-      });
-      await prisma.design.update({
-        where: { id: design.id },
-        data: {
-          thumbnail: newThumbnail.url,
-        },
-      });
-    }
-
-    return res.status(200).json({ success: 'Thumbnail gemt' });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
+  } else {
+    const newThumbnail = await put(`thumbnails/${design.id}-thumbnail.jpg`, thumbnail, {
+      access: "public",
+      contentType: "image/jpeg",
+    });
+    await prisma.design.update({
+      where: { id: design.id },
+      data: {
+        thumbnail: newThumbnail.url,
+      },
+    });
   }
+
+  return res.status(200).json({ success: 'Thumbnail gemt' });
 })
 
 router.post('/export', async (req, res) => {

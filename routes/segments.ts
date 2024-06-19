@@ -53,17 +53,12 @@ router.delete('/:id', async (req, res) => {
 
   if (segment.user_id !== user_id) return res.status(403).json({ error: 'Forbidden' });
 
-  try {
-    await prisma.profile.deleteMany({
-      where: { segment_id: req.params.id },
-    });
-    await prisma.segment.delete({
-      where: { id: req.params.id },
-    });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  await prisma.profile.deleteMany({
+    where: { segment_id: req.params.id },
+  });
+  await prisma.segment.delete({
+    where: { id: req.params.id },
+  });
 
   res.json({ success: 'Segment deleted successfully' });
 })
@@ -81,15 +76,10 @@ router.put('/:id', async (req, res) => {
 
   if (segment.user_id !== user_id) return res.status(403).json({ error: 'Forbidden' });
 
-  try {
-    await prisma.segment.update({
-      where: { id: req.params.id },
-      data: { name: newName },
-    });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  await prisma.segment.update({
+    where: { id: req.params.id },
+    data: { name: newName },
+  });
 
   res.json({ success: 'Segment updated successfully' });
 })
@@ -110,46 +100,41 @@ router.get('/export/:id', async (req, res) => {
   });
   if (!segment) return res.status(404).json({ error: SegmentNotFoundError });
 
-  try {
-    const headers = [
-      "id",
-      "first_name",
-      "last_name",
-      "email",
-      "address",
-      "city",
-      "country",
-      "zip_code",
-      "in_robinson",
-      "custom_variable"
+  const headers = [
+    "id",
+    "first_name",
+    "last_name",
+    "email",
+    "address",
+    "city",
+    "country",
+    "zip_code",
+    "in_robinson",
+    "custom_variable"
+  ];
+  let csvContent = headers.join(",") + "\n";
+
+  // Create CSV content
+  segment.profiles.forEach((profile: Profile) => {
+    const row = [
+      generateUniqueFiveDigitId(),
+      `"${profile.first_name}"`,
+      `"${profile.last_name}"`,
+      `"${profile.email}"`,
+      `"${profile.address}"`,
+      `"${profile.city}"`,
+      `"${profile.country}"`,
+      `"${profile.zip_code}"`,
+      `"${profile.in_robinson ? "Ja" : "Nej"}"`,
+      `"${profile.custom_variable}"`,
     ];
-    let csvContent = headers.join(",") + "\n";
+    csvContent += row.join(",") + "\n";
+  });
 
-    // Create CSV content
-    segment.profiles.forEach((profile: Profile) => {
-      const row = [
-        generateUniqueFiveDigitId(),
-        `"${profile.first_name}"`,
-        `"${profile.last_name}"`,
-        `"${profile.email}"`,
-        `"${profile.address}"`,
-        `"${profile.city}"`,
-        `"${profile.country}"`,
-        `"${profile.zip_code}"`,
-        `"${profile.in_robinson ? "Ja" : "Nej"}"`,
-        `"${profile.custom_variable}"`,
-      ];
-      csvContent += row.join(",") + "\n";
-    });
-
-    // Return CSV
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", `attachment; filename=${segment.name}.csv`);
-    res.send(csvContent);
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  // Return CSV
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename=${segment.name}.csv`);
+  res.send(csvContent);
 })
 
 router.get('/klaviyo', async (req, res) => {
@@ -161,44 +146,39 @@ router.get('/klaviyo', async (req, res) => {
   });
   if (!user) return res.status(404).json({ error: UserNotFoundError });
 
-  try {
-    const klaviyoIntegration = await prisma.integration.findFirst({
-      where: {
-        user_id: user.id,
-        type: "klaviyo",
-      },
-    });
+  const klaviyoIntegration = await prisma.integration.findFirst({
+    where: {
+      user_id: user.id,
+      type: "klaviyo",
+    },
+  });
 
-    if (klaviyoIntegration?.klaviyo_api_key == null) {
-      return res.status(400).json({ error: "You need to connect your Klaviyo account first" });
-    }
-
-    const options = {
-      method: "GET",
-      headers: {
-        accept: "application/json",
-        revision: "2024-02-15",
-        Authorization: `Klaviyo-API-Key ${klaviyoIntegration.klaviyo_api_key}`,
-      },
-    };
-
-    let segments: any = [];
-    let nextPageUrl = "https://a.klaviyo.com/api/segments";
-
-    while (nextPageUrl) {
-      const response = await fetch(nextPageUrl, options);
-      const data: any = await response.json();
-
-      segments = [...segments, ...data.data];
-
-      nextPageUrl = data.links.next;
-    }
-
-    return res.status(200).json({ segments });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
+  if (klaviyoIntegration?.klaviyo_api_key == null) {
+    return res.status(400).json({ error: "You need to connect your Klaviyo account first" });
   }
+
+  const options = {
+    method: "GET",
+    headers: {
+      accept: "application/json",
+      revision: "2024-02-15",
+      Authorization: `Klaviyo-API-Key ${klaviyoIntegration.klaviyo_api_key}`,
+    },
+  };
+
+  let segments: any = [];
+  let nextPageUrl = "https://a.klaviyo.com/api/segments";
+
+  while (nextPageUrl) {
+    const response = await fetch(nextPageUrl, options);
+    const data: any = await response.json();
+
+    segments = [...segments, ...data.data];
+
+    nextPageUrl = data.links.next;
+  }
+
+  return res.status(200).json({ segments });
 })
 
 router.post('/csv', (req, res) => {
@@ -366,83 +346,78 @@ router.post('/klaviyo', async (req, res) => {
   });
   if (!user) return res.status(404).json({ error: UserNotFoundError });
 
-  try {
-    const integration = await prisma.integration.findFirst({
-      where: {
-        user_id: user.id,
-        type: "klaviyo",
-      },
-    });
-    if (!integration || !integration.klaviyo_api_key) return res.status(400).json({ error: IntegrationNotFoundError });
+  const integration = await prisma.integration.findFirst({
+    where: {
+      user_id: user.id,
+      type: "klaviyo",
+    },
+  });
+  if (!integration || !integration.klaviyo_api_key) return res.status(400).json({ error: IntegrationNotFoundError });
 
-    const klaviyoSegmentProfiles = await getKlaviyoSegmentProfilesBySegmentId(
-      selected_segment.id,
-      integration.klaviyo_api_key
-    );
+  const klaviyoSegmentProfiles = await getKlaviyoSegmentProfilesBySegmentId(
+    selected_segment.id,
+    integration.klaviyo_api_key
+  );
 
-    const newSegment = await prisma.segment.create({
-      data: {
-        name: selected_segment.attributes.name,
-        type: "klaviyo",
-        user_id: user.id,
-        klaviyo_id: selected_segment.id,
-        demo: user.demo,
-      },
-    });
+  const newSegment = await prisma.segment.create({
+    data: {
+      name: selected_segment.attributes.name,
+      type: "klaviyo",
+      user_id: user.id,
+      klaviyo_id: selected_segment.id,
+      demo: user.demo,
+    },
+  });
 
-    let profilesToAdd = klaviyoSegmentProfiles.validProfiles.map((profile) => ({
-      id: profile.id,
-      first_name: profile.attributes.first_name,
-      last_name: profile.attributes.last_name,
-      email: profile.attributes.email,
-      address: profile.attributes.location.address1,
-      city: profile.attributes.location.city,
-      zip_code: profile.attributes.location.zip,
-      country: profile.attributes.location.country,
+  let profilesToAdd = klaviyoSegmentProfiles.validProfiles.map((profile) => ({
+    id: profile.id,
+    first_name: profile.attributes.first_name,
+    last_name: profile.attributes.last_name,
+    email: profile.attributes.email,
+    address: profile.attributes.location.address1,
+    city: profile.attributes.location.city,
+    zip_code: profile.attributes.location.zip,
+    country: profile.attributes.location.country,
+    segment_id: newSegment.id,
+    in_robinson: false,
+    custom_variable: profile.attributes.properties.custom_variable || null,
+  }));
+
+  const profilesInRobinson = await returnProfilesInRobinson(profilesToAdd);
+
+  // filter the profiles in robinson into the profilesToAdd array and set in_robinson to true
+  profilesToAdd.forEach((profile) => {
+    if (
+      profilesInRobinson.some((robinsonProfile) => robinsonProfile === profile)
+    ) {
+      profile.in_robinson = true;
+    }
+  });
+
+  // create the new profiles
+  await prisma.profile.createMany({
+    data: profilesToAdd.map((profile) => ({
+      klaviyo_id: profile.id,
+      first_name: profile.first_name.toLowerCase(),
+      last_name: profile.last_name.toLowerCase(),
+      email: profile.email.toLowerCase(),
+      address: profile.address.toLowerCase(),
+      city: profile.city.toLowerCase(),
+      zip_code: profile.zip_code,
+      country: profile.country.toLowerCase(),
       segment_id: newSegment.id,
-      in_robinson: false,
-      custom_variable: profile.attributes.properties.custom_variable || null,
-    }));
+      in_robinson: profile.in_robinson,
+      custom_variable: profile.custom_variable || null,
+      demo: newSegment.demo,
+    })),
+  });
 
-    const profilesInRobinson = await returnProfilesInRobinson(profilesToAdd);
+  await prisma.segment.findUnique({
+    where: { id: newSegment.id },
+    include: { profiles: true, campaign: true },
+  });
 
-    // filter the profiles in robinson into the profilesToAdd array and set in_robinson to true
-    profilesToAdd.forEach((profile) => {
-      if (
-        profilesInRobinson.some((robinsonProfile) => robinsonProfile === profile)
-      ) {
-        profile.in_robinson = true;
-      }
-    });
-
-    // create the new profiles
-    await prisma.profile.createMany({
-      data: profilesToAdd.map((profile) => ({
-        klaviyo_id: profile.id,
-        first_name: profile.first_name.toLowerCase(),
-        last_name: profile.last_name.toLowerCase(),
-        email: profile.email.toLowerCase(),
-        address: profile.address.toLowerCase(),
-        city: profile.city.toLowerCase(),
-        zip_code: profile.zip_code,
-        country: profile.country.toLowerCase(),
-        segment_id: newSegment.id,
-        in_robinson: profile.in_robinson,
-        custom_variable: profile.custom_variable || null,
-        demo: newSegment.demo,
-      })),
-    });
-
-    await prisma.segment.findUnique({
-      where: { id: newSegment.id },
-      include: { profiles: true, campaign: true },
-    });
-
-    res.status(200).json({ success: 'Segment created successfully', skipped_profiles: klaviyoSegmentProfiles.skippedProfiles, reason: klaviyoSegmentProfiles.reason });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  res.status(200).json({ success: 'Segment created successfully', skipped_profiles: klaviyoSegmentProfiles.skippedProfiles, reason: klaviyoSegmentProfiles.reason });
 })
 
 router.post('/webhook', async (req, res) => {
@@ -454,21 +429,16 @@ router.post('/webhook', async (req, res) => {
   });
   if (!user) return res.status(404).json({ error: UserNotFoundError });
 
-  try {
-    await prisma.segment.create({
-      data: {
-        name,
-        type: "webhook",
-        user_id: user.id,
-        demo: user.demo,
-      },
-    });
+  await prisma.segment.create({
+    data: {
+      name,
+      type: "webhook",
+      user_id: user.id,
+      demo: user.demo,
+    },
+  });
 
-    return res.status(200).json({ success: 'Segment created successfully' });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  return res.status(200).json({ success: 'Segment created successfully' });
 })
 
 export default router;
