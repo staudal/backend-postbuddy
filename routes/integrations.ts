@@ -4,6 +4,7 @@ import { InternalServerError, MissingRequiredParametersError, UserNotFoundError 
 import { extractQueryWithoutHMAC, validateHMAC } from '../functions';
 import { authenticateToken } from './middleware';
 import { API_URL, WEB_URL } from '../constants';
+import { Resend } from 'resend';
 
 const router = Router();
 
@@ -261,6 +262,29 @@ router.get('/shopify/callback', async (req, res) => {
     const data: any = await ordersWebhookResponse.json();
     return res.status(400).json({ error: data.error });
   }
+
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  (async function () {
+    const { error } = await resend.emails.send({
+      from: 'Postbuddy <noreply@postbuddy.dk>',
+      to: ['jakob@postbuddy.dk'],
+      subject: `Ny bruger har integreret med Shopify`,
+      html: `En ny bruger med følgende oplysninger har integreret med Shopify:
+      <br>
+      <br>
+      <strong>Navn:</strong> ${user.first_name} ${user.last_name}
+      <br>
+      <strong>Virksomhed:</strong> ${user.company}
+      <br>
+      <strong>Email:</strong> ${user.email}
+      <br>
+      <strong>Shop:</strong> ${shop}`,
+    });
+
+    if (error) {
+      return console.error({ error });
+    }
+  })();
 
   return res.redirect(WEB_URL + '/dashboard/integrations');
 })

@@ -3,6 +3,7 @@ import { prisma } from '../app';
 import jwt from 'jsonwebtoken';
 import { UserAlreadyExistsError, UserNotFoundError } from '../errors';
 import argon2 from 'argon2';
+import { Resend } from 'resend';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
@@ -39,6 +40,27 @@ router.post('/signup', async (req, res) => {
     JWT_SECRET,
     { expiresIn: '24h' } // Expires in 24 hours
   );
+
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  (async function () {
+    const { error } = await resend.emails.send({
+      from: 'Postbuddy <noreply@postbuddy.dk>',
+      to: ['jakob@postbuddy.dk'],
+      subject: `Ny bruger signup: ${user.email}`,
+      html: `Der er blevet oprettet en ny bruger med følgende oplysninger:
+      <br>
+      <br>
+      <strong>Navn:</strong> ${user.first_name} ${user.last_name}
+      <br>
+      <strong>Virksomhed:</strong> ${user.company}
+      <br>
+      <strong>Email:</strong> ${user.email}`,
+    });
+
+    if (error) {
+      return console.error({ error });
+    }
+  })();
 
   return res.status(201).json({
     success: 'User created successfully',

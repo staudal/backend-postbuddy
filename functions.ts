@@ -9,6 +9,7 @@ import Client from "ssh2-sftp-client";
 import { createHmac } from 'node:crypto';
 import { API_URL, config } from './constants';
 import { logtail } from './app';
+import { Resend } from 'resend';
 
 const prisma = new PrismaClient()
 
@@ -87,6 +88,7 @@ export const fetchBulkOperationData = async (url: string) => {
 
   return orders;
 };
+
 export const saveOrders = async (userId: string, shopifyOrders: Order[]) => {
   const BATCH_SIZE = 20000;
   // Split shopifyOrders into smaller batches
@@ -100,6 +102,13 @@ export const saveOrders = async (userId: string, shopifyOrders: Order[]) => {
       },
     });
 
+    const user = await prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+    });
+    if (!user) throw new Error('User not found');
+
     const newShopifyOrders = batch.filter(
       (shopifyOrder) => !existingDbOrders.some((existingDbOrder) => existingDbOrder.order_id === shopifyOrder.id),
     );
@@ -109,6 +118,23 @@ export const saveOrders = async (userId: string, shopifyOrders: Order[]) => {
         data: newShopifyOrders.map(newShopifyOrder => formatOrderData(newShopifyOrder, userId)),
         skipDuplicates: true,
       });
+    }
+
+    // If existing orders is 0 and new orders is more than 0, it's the first time the user has synced orders. Send email to CV.
+    if (existingDbOrders.length === 0 && newShopifyOrders.length > 0) {
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      (async function () {
+        const { error } = await resend.emails.send({
+          from: 'Postbuddy <noreply@postbuddy.dk>',
+          to: ['jakob@postbuddy.dk'],
+          subject: `Ordre er nu synkroniseret for bruger: ${user.email}`,
+          html: `Det er første gang brugeren ${user.email} har synkroniseret ordrer. De kan nu tilgå analytics på Postbuddy.`,
+        });
+
+        if (error) {
+          return console.error({ error });
+        }
+      })();
     }
   }
   return shopifyOrders; // All orders processed
@@ -230,49 +256,49 @@ export async function triggerShopifyBulkQueries() {
 
   const shopifyBulkOperationQuery = `
       mutation {
-        bulkOperationRunQuery(
-          query: """
+          bulkOperationRunQuery(
+            query: """
             {
               orders(query: "created_at:>${dateOnly}") {
-                edges {
-                  node {
-                    id
+          edges {
+          node {
+          id
                     totalPriceSet {
-                      shopMoney {
-                        amount
+          shopMoney {
+          amount
                         currencyCode
-                      }
+        }
                     }
                     customer {
-                      firstName
-                      lastName
-                      email
-                      addresses(first: 1) {
-                        address1
-                        zip
-                        city
-                        country
-                      }
-                    }
-                    createdAt
-                    discountCodes
-                  }
-                }
-              }
-            }
-          """
-        ) {
-          bulkOperation {
-            id
-            status
-          }
-          userErrors {
-            field
-            message
-          }
+        firstName
+        lastName
+        email
+        addresses(first: 1) {
+          address1
+          zip
+          city
+          country
         }
       }
-    `;
+      createdAt
+      discountCodes
+    }
+  }
+}
+            }
+"""
+        ) {
+          bulkOperation {
+    id
+    status
+  }
+          userErrors {
+    field
+    message
+  }
+}
+      }
+`;
 
   const userPromises = users.map(async (user) => {
     const shopifyIntegration = user.integrations.find(

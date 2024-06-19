@@ -5,6 +5,7 @@ import { checkIfProfileIsInRobinson, validateCountry } from '../functions';
 import { ProfileToAdd } from '../types';
 import Stripe from 'stripe';
 import { createHmac } from 'node:crypto';
+import { Resend } from 'resend';
 
 const router = Router();
 
@@ -81,15 +82,47 @@ router.post('/stripe', async (req, res) => {
           subscription: payload.data.object.subscription,
         });
 
+        const user = await prisma.user.findUnique({
+          where: {
+            id: payload.data.object.client_reference_id,
+          },
+        });
+        if (!user) return res.status(404).json({ error: UserNotFoundError });
+
         await prisma.subscription.create({
           data: {
             subscription_id: payload.data.object.subscription,
             customer_id: payload.data.object.customer,
-            user_id: payload.data.object.client_reference_id,
+            user_id: user.id,
             subscription_item_id: subscriptionItems.data[0].id,
             status: "active",
           },
         });
+
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        (async function () {
+          const { error } = await resend.emails.send({
+            from: 'Postbuddy <noreply@postbuddy.dk>',
+            to: ['jakob@postbuddy.dk'],
+            subject: `Ny bruger har købt et abonnement`,
+            html: `En ny bruger med følgende oplysninger har købt et abonnement:
+            <br>
+            <br>
+            <strong>Navn:</strong> ${user.first_name} ${user.last_name}
+            <br>
+            <strong>Virksomhed:</strong> ${user.company}
+            <br>
+            <strong>Email:</strong> ${user.email}
+            <br>
+            <strong>Abonnement:</strong> ${subscriptionItems.data[0].price.product}
+            <br>
+            <strong>Pris:</strong> ${subscriptionItems.data[0].price.unit_amount} kr.`,
+          });
+
+          if (error) {
+            return console.error({ error });
+          }
+        })();
       }
       break;
     }
@@ -183,6 +216,10 @@ router.post('/shopify/uninstall', async (req, res) => {
     where: { user_id: state as string },
   });
   if (!shopifyIntegration) return res.status(404).json({ error: MissingShopifyIntegrationError });
+
+  await prisma.integration.delete({
+    where: { id: shopifyIntegration.id },
+  });
 
   return res.status(200).json({ success: 'Webhook received' });
 })
