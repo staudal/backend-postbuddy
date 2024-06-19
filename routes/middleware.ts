@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../app';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
+const JWT_EXPIRATION_TIME = '15m'; // Example: 15 minutes
 
 const authenticateToken = async (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
@@ -11,16 +12,23 @@ const authenticateToken = async (req: any, res: any, next: any) => {
     return res.status(401).json({ error: 'Unauthorized: No token provided' });
   }
 
-  const decoded = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
 
-  // Optional: You can add more validation logic here, e.g., checking if the user exists in the database
-  const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
-  if (!user) {
-    return res.status(403).json({ error: 'User not found' });
+    // Optional: You can add more validation logic here, e.g., checking if the user exists in the database
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+    if (!user) {
+      return res.status(403).json({ error: 'User not found' });
+    }
+
+    req.body.user_id = user.id; // Attach the user ID to the request body
+    next(); // Proceed to the next middleware or route handler
+  } catch (error: any) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Unauthorized: Token expired' });
+    }
+    return res.status(403).json({ error: 'Forbidden: Invalid token' });
   }
-
-  req.body.user_id = user.id; // Attach the user ID to the request body
-  next(); // Proceed to the next middleware or route handler
 };
 
 const adminOnly = async (req: any, res: any, next: any) => {
@@ -31,23 +39,30 @@ const adminOnly = async (req: any, res: any, next: any) => {
     return res.status(401).json({ error: 'Unauthorized: No token provided' });
   }
 
-  const decoded = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
 
-  // Ensure the user exists in the database
-  const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
-  if (!user) {
-    return res.status(403).json({ error: 'User not found' });
+    // Ensure the user exists in the database
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+    if (!user) {
+      return res.status(403).json({ error: 'User not found' });
+    }
+
+    // Check if the user is an admin
+    if (user.role !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden: Admins only' });
+    }
+
+    // Attach the user information to the request object
+    req.body.user_id = user.id;
+
+    next(); // Proceed to the next middleware or route handler
+  } catch (error: any) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Unauthorized: Token expired' });
+    }
+    return res.status(403).json({ error: 'Forbidden: Invalid token' });
   }
-
-  // Check if the user is an admin
-  if (user.role !== 'admin') {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
-  }
-
-  // Attach the user information to the request object
-  req.body.user_id = user.id;
-
-  next(); // Proceed to the next middleware or route handler
 };
 
 export { authenticateToken, adminOnly };

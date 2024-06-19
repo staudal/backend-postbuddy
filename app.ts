@@ -24,7 +24,6 @@ import adminRoute from "./routes/admin";
 import { errorHandler } from "./errorhandler";
 
 import { activateScheduledCampaigns, triggerShopifyBulkQueries, updateKlaviyoProfiles } from "./functions";
-import { API_URL } from "./constants";
 import path from "path";
 
 import { Logtail } from "@logtail/node";
