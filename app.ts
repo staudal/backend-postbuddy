@@ -21,7 +21,7 @@ import subscriptionRouter from "./routes/subscriptions";
 import analyticsRouter from "./routes/analytics";
 import profilesRouter from "./routes/profiles";
 import adminRoute from "./routes/admin";
-import errorHandler from "./errorHandler";
+import { errorHandler } from "./errorHandler";
 
 import { activateScheduledCampaigns, triggerShopifyBulkQueries, updateKlaviyoProfiles } from "./functions";
 import { API_URL } from "./constants";
@@ -71,7 +71,7 @@ app.use('/admin', authenticateToken, adminOnly, adminRoute);
 
 app.use(errorHandler)
 
-const port = process.env.PORT || 8000;
+const port = process.env.PORT || 8000
 app.listen(port, () => {
   logtail.info(`🚀 Server ready at: ${API_URL}`)
 })
