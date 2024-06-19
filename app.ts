@@ -21,7 +21,7 @@ import subscriptionRouter from "./routes/subscriptions";
 import analyticsRouter from "./routes/analytics";
 import profilesRouter from "./routes/profiles";
 import adminRoute from "./routes/admin";
-import { errorHandler } from "./errorHandler";
+import { errorHandler } from "./errorhandler";
 
 import { activateScheduledCampaigns, triggerShopifyBulkQueries, updateKlaviyoProfiles } from "./functions";
 import { API_URL } from "./constants";

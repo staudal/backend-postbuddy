@@ -1,4 +1,3 @@
-// errorHandler.js
 import { logtail } from './app'
 
 export const errorHandler = (err: any, req: any, res: any, next: any) => {
