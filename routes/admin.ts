@@ -26,6 +26,8 @@ router.get('/users', async (req, res) => {
       campaigns: true,
       designs: true,
       segments: true,
+      orders: true,
+      integrations: true,
     },
     orderBy: {
       created_at: 'desc',
@@ -49,12 +51,14 @@ router.post('/users', async (req, res) => {
     return res.status(403).json({ error: InsufficientRightsError });
   }
 
-  // Check if the created user already exists
-  const existingUser = await prisma.user.findUnique({
-    where: { email },
-  });
-  if (existingUser) {
-    return res.status(400).json({ error: UserAlreadyExistsError });
+  // Check if the created user already exists if email is provided
+  if (email) {
+    const existingUser = await prisma.user.findUnique({
+      where: { email },
+    });
+    if (existingUser) {
+      return res.status(400).json({ error: UserAlreadyExistsError });
+    }
   }
 
   const hashedPassword = await argon2.hash(password);
