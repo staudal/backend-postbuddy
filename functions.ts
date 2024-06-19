@@ -107,28 +107,32 @@ export const fetchBulkOperationData = async (url: string) => {
     throw new Error(`Der opstod en fejl under hentning af bulk operation data: ${error.message}`);
   }
 };
-
 export const saveOrders = async (userId: string, shopifyOrders: Order[]) => {
+  const BATCH_SIZE = 20000;
   try {
-    const existingDbOrders = await prisma.order.findMany({
-      where: {
-        user_id: userId,
-        order_id: { in: shopifyOrders.map(shopifyOrder => shopifyOrder.id) },
-      },
-    });
+    // Split shopifyOrders into smaller batches
+    for (let i = 0; i < shopifyOrders.length; i += BATCH_SIZE) {
+      const batch = shopifyOrders.slice(i, i + BATCH_SIZE);
 
-    const newShopifyOrders = shopifyOrders.filter(
-      (shopifyOrder) => !existingDbOrders.some((existingDbOrder) => existingDbOrder.order_id === shopifyOrder.id),
-    );
-
-    if (newShopifyOrders.length > 0) {
-      await prisma.order.createMany({
-        data: newShopifyOrders.map(newShopifyOrder => formatOrderData(newShopifyOrder, userId)),
-        skipDuplicates: true,
+      const existingDbOrders = await prisma.order.findMany({
+        where: {
+          user_id: userId,
+          order_id: { in: batch.map(shopifyOrder => shopifyOrder.id) },
+        },
       });
-    }
 
-    return newShopifyOrders;
+      const newShopifyOrders = batch.filter(
+        (shopifyOrder) => !existingDbOrders.some((existingDbOrder) => existingDbOrder.order_id === shopifyOrder.id),
+      );
+
+      if (newShopifyOrders.length > 0) {
+        await prisma.order.createMany({
+          data: newShopifyOrders.map(newShopifyOrder => formatOrderData(newShopifyOrder, userId)),
+          skipDuplicates: true,
+        });
+      }
+    }
+    return shopifyOrders; // All orders processed
   } catch (error: any) {
     console.error(`Error saving orders for user ${userId}: ${error}`);
     throw new Error(`Der opstod en fejl ved gemme ordre for bruger ${userId}: ${error.message}`);
