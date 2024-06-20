@@ -5,35 +5,36 @@ import { fetchBulkOperationData, getBulkOperationUrl, loadUserWithShopifyIntegra
 const router = Router();
 
 router.post('/bulk-query-trigger', async (req, res) => {
-  const { user_id } = req.body;
+  try {
+    const { user_id } = req.body;
 
-  if (!user_id) {
-    return res.status(400).json({ error: 'Mangler user_id i request body' });
-  }
+    if (!user_id) {
+      return res.status(400).json({ error: 'Mangler user_id i request body' });
+    }
 
-  const user = await prisma.user.findUnique({
-    where: { id: user_id },
-    include: { integrations: true, campaigns: true },
-  });
+    const user = await prisma.user.findUnique({
+      where: { id: user_id },
+      include: { integrations: true, campaigns: true },
+    });
 
-  if (!user) {
-    return res.status(404).json({ error: `Bruger med id ${user_id} findes ikke` });
-  }
+    if (!user) {
+      return res.status(404).json({ error: `Bruger med id ${user_id} findes ikke` });
+    }
 
-  const shopifyIntegration = user.integrations.find(integration => integration.type === 'shopify');
+    const shopifyIntegration = user.integrations.find(integration => integration.type === 'shopify');
 
-  if (!shopifyIntegration || !shopifyIntegration.token) {
-    return res.status(400).json({ error: `Bruger med id ${user_id} har ikke en gyldig Shopify-integration` });
-  }
+    if (!shopifyIntegration || !shopifyIntegration.token) {
+      return res.status(400).json({ error: `Bruger med id ${user_id} har ikke en gyldig Shopify-integration` });
+    }
 
-  const currentDate = new Date();
-  const currentDateMinus365Days = new Date(
-    currentDate.setDate(currentDate.getDate() - 365),
-  );
-  const dateOnly = currentDateMinus365Days.toISOString().split('T')[0];
-  const shopifyApiVersion = '2021-10';
+    const currentDate = new Date();
+    const currentDateMinus365Days = new Date(
+      currentDate.setDate(currentDate.getDate() - 365),
+    );
+    const dateOnly = currentDateMinus365Days.toISOString().split('T')[0];
+    const shopifyApiVersion = '2021-10';
 
-  const shopifyBulkOperationQuery = `
+    const shopifyBulkOperationQuery = `
       mutation {
         bulkOperationRunQuery(
           query: """
@@ -79,20 +80,24 @@ router.post('/bulk-query-trigger', async (req, res) => {
       }
     `;
 
-  const shopifyApiUrl = `https://${shopifyIntegration.shop}.myshopify.com/admin/api/${shopifyApiVersion}/graphql.json`;
-  const response = await fetch(shopifyApiUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyIntegration.token },
-    body: JSON.stringify({ query: shopifyBulkOperationQuery }),
-  });
+    const shopifyApiUrl = `https://${shopifyIntegration.shop}.myshopify.com/admin/api/${shopifyApiVersion}/graphql.json`;
+    const response = await fetch(shopifyApiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': shopifyIntegration.token },
+      body: JSON.stringify({ query: shopifyBulkOperationQuery }),
+    });
 
-  const data: any = await response.json();
+    const data: any = await response.json();
 
-  if (!response.ok) {
-    return res.status(500).json({ error: `Der opstod en fejl under oprettelse af bulk query for bruger ${user.id}: ${data.errors}` });
+    if (!response.ok) {
+      return res.status(500).json({ error: `Der opstod en fejl under oprettelse af bulk query for bruger ${user.id}: ${data.errors}` });
+    }
+
+    return res.status(200).json({ message: `Bulk query oprettet for bruger ${user.id}` });
+  } catch (error: any) {
+    logtail.error(error.message);
+    return res.status(500).json({ error: error.message });
   }
-
-  return res.status(200).json({ message: `Bulk query oprettet for bruger ${user.id}` });
 });
 
 router.post('/bulk-query-finished', async (req, res) => {
