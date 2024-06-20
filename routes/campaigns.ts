@@ -1,7 +1,7 @@
 import { Router, Request } from 'express';
-import { prisma } from '../app';
-import { CampaignNotFoundError, DesignNotFoundError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
-import { billUserForLettersSent, generateTestDesign } from '../functions';
+import { logtail, prisma } from '../app';
+import { CampaignNotFoundError, DesignNotFoundError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
+import { activateCampaignForDemoUser, activateCampaignForNonDemoUser, billUserForLettersSent, generateCsvAndSendToPrintPartner, generatePdf, generateTestDesign, sendPdfToPrintPartner } from '../functions';
 import Client from "ssh2-sftp-client";
 
 const router = Router();
@@ -53,12 +53,12 @@ router.post('/', async (req, res) => {
   const design = await prisma.design.findUnique({
     where: { id: design_id },
   });
-  if (!design) return res.status(404).json({ error: DesignNotFoundError });
+  if (!design || !design.blob) return res.status(404).json({ error: DesignNotFoundError });
 
   const user = await prisma.user.findUnique({
     where: { id: user_id },
   });
-  if (!user) return UserNotFoundError;
+  if (!user) return res.status(404).json({ error: UserNotFoundError });
 
   const profiles = await prisma.profile.findMany({
     where: {
@@ -84,11 +84,6 @@ router.post('/', async (req, res) => {
     }
   })
 
-  // Bill the user if the campaign is not a demo
-  if (!segment.demo) {
-    await billUserForLettersSent(profiles.length, user_id)
-  }
-
   // If the campaign is scheduled for a future date, update the status to "scheduled"
   if (campaign.start_date > new Date()) {
     await prisma.campaign.update({
@@ -99,38 +94,15 @@ router.post('/', async (req, res) => {
     return res.status(201).json({ success: "Kampagnen er blevet oprettet og er blevet sat til at starte på en senere dato" });
   }
 
-  // If the campaign is a demo, update the profiles to sent. If not, generate the pdf which will update the profiles to sent
-  if (segment.demo === false) {
-    const response = await fetch("https://app.postbuddy.dk/api/designs/export", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ campaignId: campaign.id }),
-    })
-    if (!response.ok) {
-      const data = await response.json();
-      console.error(data);
-      return res.status(500).json({ error: InternalServerError });
+  try {
+    if (!segment.demo) {
+      await activateCampaignForNonDemoUser(user.id, profiles, design.blob, campaign.id)
+    } else {
+      await activateCampaignForDemoUser(profiles, campaign.id)
     }
-  } else {
-    await prisma.profile.updateMany({
-      where: {
-        segment_id: segment.id,
-        in_robinson: false,
-      },
-      data: {
-        letter_sent: true,
-        letter_sent_at: new Date(),
-      },
-    })
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
   }
-
-  // If the campaign is scheduled for now, update the status to "active"
-  await prisma.campaign.update({
-    where: { id: campaign.id },
-    data: { status: "active" },
-  })
 
   return res.status(201).json({ success: segment.demo ? "Kampagnen er blevet oprettet" : "Kampagnen er blevet oprettet og er blevet sendt til produktion" });
 })

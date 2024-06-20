@@ -2,7 +2,7 @@ import { PrismaClient, Profile, User } from '@prisma/client'
 import { KlaviyoSegmentProfile, Order, ProfileToAdd } from './types'
 import { Order as PrismaOrder } from '@prisma/client'
 import Stripe from 'stripe';
-import { MissingSubscriptionError } from './errors';
+import { FailedToBillUserError, FailedToGeneratePdfError, FailedToSendPdfToPrintPartnerError, FailedToUpdateCampaignStatusError, FailedToUpdateProfilesToSentError, MissingSubscriptionError } from './errors';
 import CreativeEngine, * as CESDK from '@cesdk/node';
 import { PDFDocument } from 'pdf-lib';
 import Client from "ssh2-sftp-client";
@@ -350,6 +350,7 @@ export async function billUserForLettersSent(profilesLength: number, user_id: st
     where: { user_id },
   });
   if (!subscription) {
+    logtail.error(`User ${user_id} does not have an active subscription and cannot be billed for letters sent`);
     throw new Error(MissingSubscriptionError);
   }
 
@@ -360,7 +361,8 @@ export async function billUserForLettersSent(profilesLength: number, user_id: st
   });
 
   if (!usageRecord) {
-    throw new Error('Failed to bill user for letters sent');
+    logtail.error(`User with id ${user_id} has a subscription but could not be billed for letters sent`);
+    throw new Error(FailedToBillUserError);
   }
 }
 
@@ -875,6 +877,92 @@ export async function generateCsvAndSendToPrintPartner(profiles: Profile[], camp
   await client.end();
 }
 
+export async function activateCampaignForNonDemoUser(user_id: string, profiles: Profile[], designBlob: string, campaign_id: string) {
+  // Try to bill the user for the letters sent
+  try {
+    await billUserForLettersSent(profiles.length, user_id);
+  } catch (error: any) {
+    throw new Error(error.message);
+  }
+
+  // Generate pdf
+  let pdf;
+  try {
+    pdf = await generatePdf(profiles, designBlob);
+  } catch (error: any) {
+    logtail.error(`An error occured while trying to generate a pdf for user ${user_id} and campaign ${campaign_id}`);
+    throw new Error(FailedToGeneratePdfError);
+  }
+
+  // Send pdf to print partner with datestring e.g. 15-05-2024
+  const date = new Date();
+  const dateString = `${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
+
+  try {
+    await sendPdfToPrintPartner(pdf, user_id, dateString);
+  } catch (error: any) {
+    logtail.error(`An error occured while trying to send a pdf to the print partner for user ${user_id} and campaign ${campaign_id}`);
+    throw new Error(FailedToSendPdfToPrintPartnerError);
+  }
+
+  try {
+    await generateCsvAndSendToPrintPartner(profiles, user_id, dateString);
+  } catch (error: any) {
+    logtail.error(`An error occured while trying to generate a csv and send it to the print partner for user ${user_id} and campaign ${campaign_id}`);
+    throw new Error(FailedToSendPdfToPrintPartnerError);
+  }
+
+  try {
+    // Update profiles to sent
+    await prisma.profile.updateMany({
+      where: {
+        id: {
+          in: profiles.map((profile) => profile.id),
+        },
+      },
+      data: {
+        letter_sent: true,
+        letter_sent_at: new Date(),
+      },
+    });
+  } catch (error: any) {
+    logtail.error(`An error occured while trying to update profiles to sent for user ${user_id} and campaign ${campaign_id}`);
+    throw new Error(FailedToUpdateProfilesToSentError);
+  }
+
+  try {
+    // Update campaign status to active
+    await prisma.campaign.update({
+      where: { id: campaign_id },
+      data: { status: "active" },
+    });
+  } catch (error: any) {
+    logtail.error(`An error occured while trying to update the campaign status to active for user ${user_id} and campaign ${campaign_id}`);
+    throw new Error(FailedToUpdateCampaignStatusError);
+  }
+}
+
+export async function activateCampaignForDemoUser(profiles: Profile[], campaign_id: string) {
+  // Update profiles to sent
+  await prisma.profile.updateMany({
+    where: {
+      id: {
+        in: profiles.map((profile) => profile.id),
+      },
+    },
+    data: {
+      letter_sent: true,
+      letter_sent_at: new Date(),
+    },
+  })
+
+  // Update campaign status to active
+  await prisma.campaign.update({
+    where: { id: campaign_id },
+    data: { status: "active" },
+  })
+}
+
 export async function activateScheduledCampaigns() {
   logtail.info("Activating scheduled campaigns");
   const campaigns = await prisma.campaign.findMany({
@@ -904,7 +992,7 @@ export async function activateScheduledCampaigns() {
       continue;
     }
 
-    if (campaign.demo === false) {
+    if (!campaign.demo) {
       const response = await fetch(API_URL + "/letters", {
         method: "POST",
         headers: {
