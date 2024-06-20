@@ -17,3 +17,13 @@ export const FailedToGeneratePdfError = 'Der opstod en fejl under genereringen a
 export const FailedToSendPdfToPrintPartnerError = 'Der opstod en fejl under afsendelsen af PDF\'en til printpartneren';
 export const FailedToUpdateProfilesToSentError = 'Der opstod en fejl under opdateringen af profilerne til afsendt';
 export const FailedToUpdateCampaignStatusError = 'Der opstod en fejl under opdateringen af kampagnens status';
+export const FailedToCreateCampaignError = 'Der opstod en fejl under oprettelsen af kampagnen';
+
+export class ErrorWithStatusCode extends Error {
+  statusCode: number;
+
+  constructor(message: string, statusCode: number) {
+    super(message);
+    this.statusCode = statusCode;
+  }
+}

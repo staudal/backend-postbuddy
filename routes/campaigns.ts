@@ -1,8 +1,9 @@
 import { Router, Request } from 'express';
 import { logtail, prisma } from '../app';
-import { CampaignNotFoundError, DesignNotFoundError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
+import { CampaignNotFoundError, DesignNotFoundError, FailedToCreateCampaignError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
 import { activateCampaignForDemoUser, activateCampaignForNonDemoUser, billUserForLettersSent, generateCsvAndSendToPrintPartner, generatePdf, generateTestDesign, sendPdfToPrintPartner } from '../functions';
 import Client from "ssh2-sftp-client";
+import { Campaign } from '@prisma/client';
 
 const router = Router();
 
@@ -69,20 +70,25 @@ router.post('/', async (req, res) => {
   if (!profiles || profiles.length === 0) return res.status(404).json({ error: ProfilesNotFoundError });
 
   const startDate = start_date ? new Date(start_date) : new Date();
-  const campaign = await prisma.campaign.create({
-    data: {
-      name,
-      type,
-      status: "pending",
-      segment_id,
-      created_at: new Date(),
-      user_id,
-      design_id,
-      discount_codes: discountCodes || [],
-      start_date: startDate,
-      demo: segment.demo,
-    }
-  })
+  let campaign: Campaign | null;
+  try {
+    campaign = await prisma.campaign.create({
+      data: {
+        name,
+        type,
+        status: "pending",
+        segment_id,
+        created_at: new Date(),
+        user_id,
+        design_id,
+        discount_codes: discountCodes || [],
+        start_date: startDate,
+        demo: segment.demo,
+      }
+    })
+  } catch (error: any) {
+    return res.status(500).json({ error: FailedToCreateCampaignError });
+  }
 
   // If the campaign is scheduled for a future date, update the status to "scheduled"
   if (campaign.start_date > new Date()) {
@@ -98,10 +104,10 @@ router.post('/', async (req, res) => {
     if (!segment.demo) {
       await activateCampaignForNonDemoUser(user.id, profiles, design.blob, campaign.id)
     } else {
-      await activateCampaignForDemoUser(profiles, campaign.id)
+      await activateCampaignForDemoUser(profiles, campaign.id, user.id)
     }
   } catch (error: any) {
-    return res.status(500).json({ error: error.message });
+    return res.status(error.statusCode).json({ error: error.message });
   }
 
   return res.status(201).json({ success: segment.demo ? "Kampagnen er blevet oprettet" : "Kampagnen er blevet oprettet og er blevet sendt til produktion" });
