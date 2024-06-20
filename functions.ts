@@ -152,6 +152,7 @@ export const saveOrders = async (user: User, shopifyOrders: Order[]) => {
 };
 
 export const processOrdersForCampaigns = async (user: any, allOrders: PrismaOrder[]) => {
+  logtail.info(`Processing orders for user ${user.id}`);
   try {
     const campaigns = user.campaigns;
     const profilePromises = allOrders.map(allOrder => findAndUpdateProfile(allOrder, campaigns));
@@ -162,7 +163,6 @@ export const processOrdersForCampaigns = async (user: any, allOrders: PrismaOrde
 };
 
 export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any[]) => {
-  logtail.info(`Processing orders for user ${allOrder.user_id}`);
   try {
     for (const campaign of campaigns) {
       const campaignStartDate = new Date(campaign.start_date);
