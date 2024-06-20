@@ -625,35 +625,15 @@ export async function validateKlaviyoApiKeyForUser(user: User) {
     },
   });
 
-  if (!integration || !integration.klaviyo_api_key) {
-    await prisma.campaign.updateMany({
-      where: {
-        user_id: user.id,
-        type: "automated",
-        segment: {
-          type: "klaviyo",
-        }
-      },
-      data: {
-        status: "paused",
-      },
-    });
-  } else {
+  if (integration && integration.klaviyo_api_key) {
     const response: any = await fetchKlaviyoSegments(integration.klaviyo_api_key);
     if (response.errors) {
-      await prisma.campaign.updateMany({
-        where: {
-          user_id: user.id,
-          type: "automated",
-          segment: {
-            type: "klaviyo",
-          }
-        },
-        data: {
-          status: "paused",
-        },
-      });
+      return false;
+    } else {
+      return true;
     }
+  } else {
+    return false;
   }
 }
 
@@ -1016,7 +996,13 @@ export async function updateKlaviyoProfiles() {
 
   try {
     for (const user of users) {
-      await validateKlaviyoApiKeyForUser(user);
+      const isValid = await validateKlaviyoApiKeyForUser(user);
+
+      if (!isValid) {
+        logtail.error(`User with id ${user.id} has an invalid Klaviyo API key`);
+        continue;
+      }
+
       const campaigns = await prisma.campaign.findMany({
         where: {
           user_id: user.id,
