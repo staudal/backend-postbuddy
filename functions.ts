@@ -241,12 +241,10 @@ export const formatOrderData = (newShopifyOrder: Order, userId: string) => {
   };
 };
 
-
 export const getAddressComponents = (addressFull: string) => {
   const addressMatch = addressFull.match(/^(\D*\d+)/) || [];
   return addressMatch[0] || addressFull;
 };
-
 
 export async function triggerShopifyBulkQueries() {
   const users = await prisma.user.findMany({
@@ -976,6 +974,25 @@ export async function activateScheduledCampaigns() {
   })
 
   for (const campaign of campaigns) {
+    // Check if campaign start date is in the past
+    const startDate = new Date(campaign.start_date);
+    const currentDate = new Date();
+    if (startDate > currentDate) {
+      continue;
+    }
+    // if user does not have subscription and it's not a demo campaign, then pause the campaign
+    const subscription = await prisma.subscription.findFirst({
+      where: { user_id: campaign.user_id },
+    });
+
+    if (!subscription && !campaign.demo) {
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: { status: "paused" },
+      });
+      continue;
+    }
+
     await prisma.campaign.update({
       where: { id: campaign.id },
       data: { status: "active" },

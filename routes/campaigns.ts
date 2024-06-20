@@ -60,7 +60,7 @@ router.post('/', async (req, res) => {
   });
   if (!segment) return res.status(404).json({ error: SegmentNotFoundError }); // Segment not found
   if (segment.profiles.length === 0) return res.status(404).json({ error: ProfilesNotFoundError }); // No profiles found
-  if (!segment.user.subscription) return res.status(400).json({ error: MissingSubscriptionError }); // User has no subscription
+  if (!segment.user.subscription && segment.demo === false) return res.status(400).json({ error: MissingSubscriptionError }); // User has no subscription
 
   const design = await prisma.design.findUnique({
     where: { id: design_id },
