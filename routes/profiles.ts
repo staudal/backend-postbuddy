@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import { prisma } from '../app';
-import { InternalServerError, MissingRequiredParametersError, ProfilesNotFoundError } from '../errors';
+import { logtail, prisma } from '../app';
+import { MissingAuthorizationHeaderError, MissingRequiredParametersError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
 import { API_URL } from '../constants';
+import { checkIfProfileIsInRobinson } from '../functions';
 
 const router = Router();
 
@@ -94,58 +95,53 @@ router.put('/:id', async (req, res) => {
 })
 
 router.get('/webhook', async (req, res) => {
-  const users = await prisma.user.findMany();
+  const { segment_id, first_name, last_name, email, address, city, zip, country, custom_variable } = req.body;
+  if (!segment_id || !first_name || !last_name || !email || !address || !city || !zip || !country) return res.status(400).json({ error: MissingRequiredParametersError });
 
-  for (const user of users) {
-    const campaigns = await prisma.campaign.findMany({
-      where: { user_id: user.id }
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: MissingAuthorizationHeaderError });
+
+  const user = await prisma.user.findFirst({
+    where: { access_token: authHeader.split(' ')[1] },
+  });
+  if (!user) return res.status(401).json({ error: UserNotFoundError });
+
+  const segment = await prisma.segment.findUnique({
+    where: { id: segment_id, type: 'webhook' },
+  });
+  if (!segment) return res.status(404).json({ error: SegmentNotFoundError });
+
+  try {
+    const profile = await prisma.profile.create({
+      data: {
+        segment_id,
+        email,
+        first_name,
+        last_name,
+        address,
+        zip_code: zip,
+        city,
+        country,
+        custom_variable: custom_variable || null,
+        in_robinson: true,
+      },
     });
-    for (const campaign of campaigns) {
-      const profiles = await prisma.profile.findMany({
-        where: {
-          segment_id: campaign.segment_id,
-          letter_sent: false,
-          segment: {
-            type: "webhook",
-          },
-          in_robinson: false,
-        },
-      });
 
-      if (profiles.length === 0) {
-        continue;
-      }
-
-      if (campaign.demo === false) {
-        const response = await fetch(API_URL + '/letters', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            campaign_id: campaign.id,
-            profiles
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error('Error sending letters');
-        }
-      }
-
-      // If campaign is a demo campaign, mark profiles as sent
-      await prisma.profile.updateMany({
-        where: {
-          segment_id: campaign.segment_id,
-          in_robinson: false,
-        },
+    const inRobinson = await checkIfProfileIsInRobinson(profile)
+    if (!inRobinson) {
+      await prisma.profile.update({
+        where: { id: profile.id },
         data: {
-          letter_sent: true,
-          letter_sent_at: new Date(),
-        },
-      });
+          in_robinson: false
+        }
+      })
     }
+  } catch (error: any) {
+    logtail.error(`Failed to create profile from webhook: ${error.message}`);
+    return res.status(500).json({ error: 'Der opstod en fejl under oprettelsen af profilen' });
   }
+
+  return res.status(200).json({ success: 'Profilen blev oprettet' });
 });
 
 export default router;

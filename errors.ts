@@ -19,6 +19,7 @@ export const FailedToUpdateProfilesToSentError = 'Der opstod en fejl under opdat
 export const FailedToUpdateCampaignStatusError = 'Der opstod en fejl under opdateringen af kampagnens status';
 export const FailedToCreateCampaignError = 'Der opstod en fejl under oprettelsen af kampagnen';
 export const FailedToScheduleCampaignError = 'Der opstod en fejl under planlægningen af kampagnen';
+export const MissingAuthorizationHeaderError = 'Manglende autorisationsheader';
 
 export class ErrorWithStatusCode extends Error {
   statusCode: number;

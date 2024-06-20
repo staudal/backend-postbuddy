@@ -249,7 +249,6 @@ export const getAddressComponents = (addressFull: string) => {
 
 
 export async function triggerShopifyBulkQueries() {
-  logtail.info("Triggering Shopify bulk queries");
   const users = await prisma.user.findMany({
     where: {
       integrations: {
@@ -349,6 +348,7 @@ export async function triggerShopifyBulkQueries() {
   });
 
   await Promise.allSettled(userPromises);
+  logtail.info('Triggered Shopify bulk queries for all users');
 }
 
 export async function billUserForLettersSent(profilesLength: number, user_id: string) {
@@ -768,6 +768,7 @@ export async function returnProfilesInRobinson(profiles: ProfileToAdd[]) {
   );
 
   if (!response || !response.body) {
+    logtail.error("Failed to fetch Robinson data");
     throw new Error("Failed to fetch Robinson data");
   } else {
     const reader = response.body.getReader();
@@ -889,16 +890,11 @@ export async function generateCsvAndSendToPrintPartner(profiles: Profile[], camp
   await client.end();
 }
 
-export async function activateCampaignForNonDemoUser(user_id: string, profiles: Profile[], designBlob: string, campaign_id: string) {
+export async function sendLettersForNonDemoUser(user_id: string, profiles: Profile[], designBlob: string, campaign_id: string) {
   // Try to bill the user for the letters sent
   try {
     await billUserForLettersSent(profiles.length, user_id);
   } catch (error: any) {
-
-    await prisma.campaign.delete({
-      where: { id: campaign_id },
-    });
-
     throw new ErrorWithStatusCode(error.message, error.statusCode);
   }
 
@@ -946,20 +942,9 @@ export async function activateCampaignForNonDemoUser(user_id: string, profiles: 
     logtail.error(`An error occured while trying to update profiles to sent for user ${user_id} and campaign ${campaign_id}`);
     throw new ErrorWithStatusCode(FailedToUpdateProfilesToSentError, 500);
   }
-
-  try {
-    // Update campaign status to active
-    await prisma.campaign.update({
-      where: { id: campaign_id },
-      data: { status: "active" },
-    });
-  } catch (error: any) {
-    logtail.error(`An error occured while trying to update the campaign status to active for user ${user_id} and campaign ${campaign_id}`);
-    throw new ErrorWithStatusCode(FailedToUpdateCampaignStatusError, 500);
-  }
 }
 
-export async function activateCampaignForDemoUser(profiles: Profile[], campaign_id: string, user_id: string) {
+export async function sendLettersForDemoUser(profiles: Profile[], campaign_id: string, user_id: string) {
   try {
     // Update profiles to sent
     await prisma.profile.updateMany({
@@ -977,17 +962,6 @@ export async function activateCampaignForDemoUser(profiles: Profile[], campaign_
     logtail.error(`An error occured while trying to update profiles to sent for user ${user_id} and campaign ${campaign_id}`);
     throw new ErrorWithStatusCode(FailedToUpdateProfilesToSentError, 500);
   }
-
-  try {
-    // Update campaign status to active
-    await prisma.campaign.update({
-      where: { id: campaign_id },
-      data: { status: "active" },
-    })
-  } catch (error: any) {
-    logtail.error(`An error occured while trying to update the campaign status to active for user ${user_id} and campaign ${campaign_id}`);
-    throw new ErrorWithStatusCode(FailedToUpdateCampaignStatusError, 500);
-  }
 }
 
 export async function activateScheduledCampaigns() {
@@ -995,6 +969,110 @@ export async function activateScheduledCampaigns() {
   const campaigns = await prisma.campaign.findMany({
     where: {
       status: "scheduled",
+    },
+    include: {
+      design: true,
+    }
+  })
+
+  for (const campaign of campaigns) {
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: { status: "active" },
+    });
+  }
+
+  logtail.info("Scheduled campaigns activated");
+}
+
+export async function updateKlaviyoProfiles() {
+  logtail.info("Updating Klaviyo profiles");
+  const users = await prisma.user.findMany({
+    where: {
+      integrations: {
+        some: {
+          type: 'klaviyo',
+        },
+      }
+    }
+  });
+
+  try {
+    for (const user of users) {
+      await validateKlaviyoApiKeyForUser(user);
+      const campaigns = await prisma.campaign.findMany({
+        where: {
+          user_id: user.id,
+          status: "active",
+          type: "automated",
+          segment: {
+            type: "klaviyo"
+          }
+        },
+        include: {
+          segment: true,
+        },
+      });
+
+      // Loop through each campaign and get the new profiles from Klaviyo
+      const profilesToAdd: ProfileToAdd[] = [];
+      for (const campaign of campaigns) {
+        const klaviyoSegmentProfiles = await getKlaviyoSegmentProfiles(
+          campaign.segment.klaviyo_id,
+          campaign.user_id
+        );
+        const existingSegmentProfiles = await prisma.profile.findMany({
+          where: { segment_id: campaign.segment_id }
+        });
+        const newKlaviyoSegmentProfiles = returnNewKlaviyoSegmentProfiles(
+          klaviyoSegmentProfiles,
+          existingSegmentProfiles
+        );
+        const convertedKlaviyoSegmentProfiles = newKlaviyoSegmentProfiles.map(
+          (klaviyoSegmentProfile) => ({
+            id: klaviyoSegmentProfile.id,
+            first_name: klaviyoSegmentProfile.attributes.first_name.toLowerCase(),
+            last_name: klaviyoSegmentProfile.attributes.last_name.toLowerCase(),
+            email: klaviyoSegmentProfile.attributes.email.toLowerCase(),
+            address: klaviyoSegmentProfile.attributes.location.address1.toLowerCase(),
+            city: klaviyoSegmentProfile.attributes.location.city.toLowerCase(),
+            zip_code: klaviyoSegmentProfile.attributes.location.zip,
+            country: klaviyoSegmentProfile.attributes.location.country.toLowerCase(),
+            segment_id: campaign.segment_id,
+            in_robinson: false,
+            custom_variable: klaviyoSegmentProfile.attributes.properties.custom_variable || null,
+            demo: campaign.segment.demo,
+          })
+        );
+        let profilesToAddTemp = convertedKlaviyoSegmentProfiles;
+        profilesToAdd.push(...profilesToAddTemp);
+      }
+
+      // Check if profiles are in Robinson
+      const profilesToAddInRobinson = await returnProfilesInRobinson(profilesToAdd);
+      profilesToAdd.map((profile) => {
+        if (profilesToAddInRobinson.includes(profile)) {
+          profile.in_robinson = true;
+        }
+      });
+
+      // Add profiles to the database
+      await prisma.profile.createMany({
+        data: profilesToAdd,
+      });
+
+      logtail.info("Klaviyo profiles updated");
+    }
+  } catch (error: any) {
+    logtail.error("Error updating Klaviyo profiles" + error);
+    throw new Error(error.message);
+  }
+}
+
+export async function periodicallySendLetters() {
+  const campaigns = await prisma.campaign.findMany({
+    where: {
+      status: "active",
     },
     include: {
       design: true,
@@ -1024,135 +1102,14 @@ export async function activateScheduledCampaigns() {
 
     try {
       if (!segment.demo) {
-        await activateCampaignForNonDemoUser(campaign.user_id, segment.profiles, campaign.design.blob, campaign.id)
+        await sendLettersForNonDemoUser(campaign.user_id, segment.profiles, campaign.design.blob, campaign.id)
       } else {
-        await activateCampaignForDemoUser(segment.profiles, campaign.id, campaign.user_id)
+        await sendLettersForDemoUser(segment.profiles, campaign.id, campaign.user_id)
       }
     } catch (error: any) {
-      logtail.error(`An error occured while trying to activate a campaign with id ${campaign.id}`);
+      logtail.error(`An error occured while trying to periodically activate a campaign with id ${campaign.id}`);
       continue;
     }
-  }
-
-  logtail.info("Scheduled campaigns activated");
-}
-
-export async function updateKlaviyoProfiles() {
-  logtail.info("Updating Klaviyo profiles");
-  const users = await prisma.user.findMany({
-    where: {
-      integrations: {
-        some: {
-          type: 'klaviyo',
-        },
-      }
-    }
-  });
-
-  for (const user of users) {
-    await validateKlaviyoApiKeyForUser(user);
-    const campaigns = await prisma.campaign.findMany({
-      where: {
-        user_id: user.id,
-        status: "active",
-        type: "automated",
-        segment: {
-          type: "klaviyo"
-        }
-      },
-      include: {
-        segment: true,
-      },
-    });
-
-    // Loop through each campaign and get the new profiles from Klaviyo
-    const profilesToAdd: ProfileToAdd[] = [];
-    for (const campaign of campaigns) {
-      const klaviyoSegmentProfiles = await getKlaviyoSegmentProfiles(
-        campaign.segment.klaviyo_id,
-        campaign.user_id
-      );
-      const existingSegmentProfiles = await prisma.profile.findMany({
-        where: { segment_id: campaign.segment_id }
-      });
-      const newKlaviyoSegmentProfiles = returnNewKlaviyoSegmentProfiles(
-        klaviyoSegmentProfiles,
-        existingSegmentProfiles
-      );
-      const convertedKlaviyoSegmentProfiles = newKlaviyoSegmentProfiles.map(
-        (klaviyoSegmentProfile) => ({
-          id: klaviyoSegmentProfile.id,
-          first_name: klaviyoSegmentProfile.attributes.first_name.toLowerCase(),
-          last_name: klaviyoSegmentProfile.attributes.last_name.toLowerCase(),
-          email: klaviyoSegmentProfile.attributes.email.toLowerCase(),
-          address: klaviyoSegmentProfile.attributes.location.address1.toLowerCase(),
-          city: klaviyoSegmentProfile.attributes.location.city.toLowerCase(),
-          zip_code: klaviyoSegmentProfile.attributes.location.zip,
-          country: klaviyoSegmentProfile.attributes.location.country.toLowerCase(),
-          segment_id: campaign.segment_id,
-          in_robinson: false,
-          custom_variable: klaviyoSegmentProfile.attributes.properties.custom_variable || null,
-          demo: campaign.segment.demo,
-        })
-      );
-      let profilesToAddTemp = convertedKlaviyoSegmentProfiles;
-      profilesToAdd.push(...profilesToAddTemp);
-    }
-
-    // Check if profiles are in Robinson
-    const profilesToAddInRobinson = await returnProfilesInRobinson(profilesToAdd);
-    profilesToAdd.map((profile) => {
-      if (profilesToAddInRobinson.includes(profile)) {
-        profile.in_robinson = true;
-      }
-    });
-
-    // Add profiles to the database
-    await prisma.profile.createMany({
-      data: profilesToAdd,
-    });
-
-    // Send out the letters
-    for (const campaign of campaigns) {
-      const profilesForCampaign = profilesToAdd.filter(
-        (profile) => profile.segment_id === campaign.segment_id && profile.in_robinson === false
-      );
-
-      if (profilesForCampaign.length === 0) {
-        continue;
-      }
-
-      if (campaign.demo === false) {
-        const response = await fetch(API_URL + "/letters", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ campaign_id: campaign.id, profiles: profilesForCampaign }),
-        })
-
-        if (!response.ok) {
-          logtail.error("Error sending letters");
-          throw new Error("Error sending letters");
-        }
-      }
-
-      // If campaign is a demo campaign, mark profiles as sent
-      if (campaign.demo === true) {
-        await prisma.profile.updateMany({
-          where: {
-            segment_id: campaign.segment_id,
-            in_robinson: false,
-          },
-          data: {
-            letter_sent: true,
-            letter_sent_at: new Date(),
-          },
-        });
-      }
-    }
-
-    logtail.info("Klaviyo profiles updated");
   }
 }
 
@@ -1287,6 +1244,7 @@ export async function checkIfProfileIsInRobinson(profile: ProfileToAdd) {
   );
 
   if (!response || !response.body) {
+    logtail.error("Failed to fetch Robinson data");
     throw new Error("Failed to fetch Robinson data");
   } else {
     const reader = response.body.getReader();

@@ -23,7 +23,7 @@ import profilesRouter from "./routes/profiles";
 import adminRoute from "./routes/admin";
 import { errorHandler } from "./errorhandler";
 
-import { activateScheduledCampaigns, triggerShopifyBulkQueries, updateKlaviyoProfiles } from "./functions";
+import { activateScheduledCampaigns, periodicallySendLetters, triggerShopifyBulkQueries, updateKlaviyoProfiles } from "./functions";
 import path from "path";
 
 import { Logtail } from "@logtail/node";
@@ -38,17 +38,21 @@ app.use(express.json());
 // Serve the cesdk directory statically
 app.use('/cesdk', express.static(path.join(__dirname, 'cesdk')));
 
-// Trigger Shopify bulk queries every day at midnight
-cron.schedule('0 0 * * *', triggerShopifyBulkQueries);
-cron.schedule('0 0 * * *', updateKlaviyoProfiles);
-cron.schedule('0 0 * * *', activateScheduledCampaigns);
+// trigger cron jobs in this order
+// 1. triggerShopifyBulkQueries - every day at 00:00
+// 2. updateKlaviyoProfiles - every day at 01:00
+// 3. activateScheduledCampaigns - once per hour
+// 4. periodicSendLetters - once per hour
+cron.schedule('0 0 * * *', triggerShopifyBulkQueries); // every day at 00:00
+cron.schedule('0 1 * * *', updateKlaviyoProfiles); // every day at 01:00
+cron.schedule('0 * * * *', activateScheduledCampaigns); // once per hour
+cron.schedule('0 * * * *', periodicallySendLetters); // once per hour
 
 // Setup routes
 app.use('/', indexRouter);
 app.use('/auth', authRouter);
 app.use('/webhooks', webhooksRouter);
 app.use('/shopify', shopifyRouter);
-
 
 // Fully protected routes
 app.use('/designs', authenticateToken, designRouter);
