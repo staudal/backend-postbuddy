@@ -108,8 +108,14 @@ router.get('/webhook', async (req, res) => {
 
   const segment = await prisma.segment.findUnique({
     where: { id: segment_id, type: 'webhook' },
+    include: { campaign: true },
   });
   if (!segment) return res.status(404).json({ error: SegmentNotFoundError });
+
+  // check if segment is connected to a campaign and campaign type is one-off
+  if (segment.campaign && segment.campaign.type === 'one-off') {
+    return res.status(400).json({ error: 'Segmentet er tilknyttet en kampagne af typen one-off og kan derfor ikke opdateres' });
+  }
 
   try {
     const profile = await prisma.profile.create({
