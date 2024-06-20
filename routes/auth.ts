@@ -45,7 +45,7 @@ router.post('/signup', async (req, res) => {
   (async function () {
     const { error } = await resend.emails.send({
       from: 'Postbuddy <noreply@postbuddy.dk>',
-      to: ['jakob@postbuddy.dk'],
+      to: ['jakob@postbuddy.dk', 'christian@postbuddy.dk'],
       subject: `Ny bruger signup: ${user.email}`,
       html: `Der er blevet oprettet en ny bruger med følgende oplysninger:
       <br>

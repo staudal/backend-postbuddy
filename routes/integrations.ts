@@ -267,7 +267,7 @@ router.get('/shopify/callback', async (req, res) => {
   (async function () {
     const { error } = await resend.emails.send({
       from: 'Postbuddy <noreply@postbuddy.dk>',
-      to: ['jakob@postbuddy.dk'],
+      to: ['jakob@postbuddy.dk', 'christian@postbuddy.dk'],
       subject: `Ny bruger har integreret med Shopify`,
       html: `En ny bruger med følgende oplysninger har integreret med Shopify:
       <br>

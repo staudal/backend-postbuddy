@@ -103,7 +103,7 @@ router.post('/stripe', async (req, res) => {
         (async function () {
           const { error } = await resend.emails.send({
             from: 'Postbuddy <noreply@postbuddy.dk>',
-            to: ['jakob@postbuddy.dk'],
+            to: ['jakob@postbuddy.dk', 'christian@postbuddy.dk'],
             subject: `Ny bruger har købt et abonnement`,
             html: `En ny bruger med følgende oplysninger har købt et abonnement:
             <br>

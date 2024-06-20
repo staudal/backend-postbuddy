@@ -23,16 +23,12 @@ router.get('/users', async (req, res) => {
 
   const users = await prisma.user.findMany({
     include: {
-      campaigns: true,
-      designs: true,
-      segments: true,
-      orders: true,
-      integrations: true,
+      _count: {
+        select: { campaigns: true, designs: true, segments: true, orders: true, integrations: true },
+      },
     },
-    orderBy: {
-      created_at: 'desc',
-    },
-  })
+    orderBy: { created_at: 'desc' },
+  });
 
   return res.status(200).json(users);
 })

@@ -133,7 +133,7 @@ export const saveOrders = async (userId: string, shopifyOrders: Order[]) => {
     (async function () {
       const { error } = await resend.emails.send({
         from: 'Postbuddy <noreply@postbuddy.dk>',
-        to: ['jakob@postbuddy.dk'],
+        to: ['jakob@postbuddy.dk', 'christian@postbuddy.dk'],
         subject: `Ordre er nu synkroniseret for bruger: ${user.email}`,
         html: `Det er første gang brugeren ${user.email} har synkroniseret ordrer. De kan nu tilgå analytics på Postbuddy.`,
       });
