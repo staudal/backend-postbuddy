@@ -1,6 +1,6 @@
 import { Router, Request } from 'express';
 import { logtail, prisma } from '../app';
-import { CampaignNotFoundError, DesignNotFoundError, FailedToCreateCampaignError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
+import { CampaignNotFoundError, DesignNotFoundError, FailedToCreateCampaignError, FailedToScheduleCampaignError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
 import { activateCampaignForDemoUser, activateCampaignForNonDemoUser, billUserForLettersSent, generateCsvAndSendToPrintPartner, generatePdf, generateTestDesign, sendPdfToPrintPartner } from '../functions';
 import Client from "ssh2-sftp-client";
 import { Campaign } from '@prisma/client';
@@ -91,13 +91,23 @@ router.post('/', async (req, res) => {
   }
 
   // If the campaign is scheduled for a future date, update the status to "scheduled"
-  if (campaign.start_date > new Date()) {
-    await prisma.campaign.update({
-      where: { id: campaign.id },
-      data: { status: "scheduled" },
-    })
+  try {
+    if (campaign.start_date > new Date()) {
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: { status: "scheduled" },
+      })
 
-    return res.status(201).json({ success: "Kampagnen er blevet oprettet og er blevet sat til at starte på en senere dato" });
+      return res.status(201).json({ success: "Kampagnen er blevet oprettet og er blevet sat til at starte på en senere dato" });
+    }
+  } catch (error: any) {
+    logtail.error(`Failed to schedule campaign with id ${campaign.id} for user with id ${user.id}`);
+
+    await prisma.campaign.delete({
+      where: { id: campaign.id },
+    });
+
+    return res.status(500).json({ error: FailedToScheduleCampaignError });
   }
 
   try {

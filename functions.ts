@@ -882,6 +882,11 @@ export async function activateCampaignForNonDemoUser(user_id: string, profiles: 
   try {
     await billUserForLettersSent(profiles.length, user_id);
   } catch (error: any) {
+
+    await prisma.campaign.delete({
+      where: { id: campaign_id },
+    });
+
     throw new ErrorWithStatusCode(error.message, error.statusCode);
   }
 
@@ -978,6 +983,9 @@ export async function activateScheduledCampaigns() {
   const campaigns = await prisma.campaign.findMany({
     where: {
       status: "scheduled",
+    },
+    include: {
+      design: true,
     }
   })
 
@@ -998,43 +1006,19 @@ export async function activateScheduledCampaigns() {
       }
     });
 
-    if (!segment || segment.profiles.length === 0) {
+    if (!segment || segment.profiles.length === 0 || !campaign.design || !campaign.design.blob) {
       continue;
     }
 
-    if (!campaign.demo) {
-      const response = await fetch(API_URL + "/letters", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ campaign_id: campaign.id, profiles: segment.profiles }),
-      });
-
-      if (!response.ok) {
-        logtail.error("Error sending letters");
-        throw new Error("Error sending letters");
+    try {
+      if (!segment.demo) {
+        await activateCampaignForNonDemoUser(campaign.user_id, segment.profiles, campaign.design.blob, campaign.id)
+      } else {
+        await activateCampaignForDemoUser(segment.profiles, campaign.id, campaign.user_id)
       }
-    }
-
-    // Update campaign status to active
-    await prisma.campaign.update({
-      where: { id: campaign.id },
-      data: { status: "active" },
-    })
-
-    // If the campaign is a demo, update the profiles to sent
-    if (campaign.demo) {
-      await prisma.profile.updateMany({
-        where: {
-          segment_id: segment.id,
-          in_robinson: false,
-        },
-        data: {
-          letter_sent: true,
-          letter_sent_at: new Date(),
-        },
-      });
+    } catch (error: any) {
+      logtail.error(`An error occured while trying to activate a campaign with id ${campaign.id}`);
+      continue;
     }
   }
 

@@ -39,7 +39,7 @@ model Session {
   id         String   @id @default(cuid())
   user_id    String   @unique
   expires_at DateTime
-  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [user_id], references: [id])
 
   @@map("sessions")
 }
@@ -54,7 +54,7 @@ model Integration {
   shop             String?
   klaviyo_api_key  String?
   user_id          String
-  user             User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user             User      @relation(fields: [user_id], references: [id])
 
   @@map("integrations")
 }
@@ -69,7 +69,7 @@ model Segment {
   demo       Boolean   @default(false)
   campaign   Campaign?
   profiles   Profile[]
-  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [user_id], references: [id])
 
   @@map("segments")
 }
@@ -87,9 +87,9 @@ model Campaign {
   start_date       DateTime
   confirmation_url String?  @unique
   demo             Boolean  @default(false)
-  design           Design?  @relation(fields: [design_id], references: [id], onDelete: Cascade)
-  segment          Segment  @relation(fields: [segment_id], references: [id], onDelete: Cascade)
-  user             User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  design           Design?  @relation(fields: [design_id], references: [id])
+  segment          Segment  @relation(fields: [segment_id], references: [id])
+  user             User     @relation(fields: [user_id], references: [id])
 
   @@map("campaigns")
 }
@@ -111,7 +111,7 @@ model Profile {
   custom_variable String?
   demo            Boolean        @default(false)
   orders          OrderProfile[]
-  segment         Segment        @relation(fields: [segment_id], references: [id], onDelete: Cascade)
+  segment         Segment        @relation(fields: [segment_id], references: [id])
 
   @@index([segment_id])
   @@map("profiles")
@@ -125,7 +125,7 @@ model Uploads {
   format  String
   height  Int
   width   Int
-  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user    User   @relation(fields: [user_id], references: [id])
 
   @@map("uploads")
 }
@@ -137,7 +137,7 @@ model Subscription {
   user_id              String  @unique
   status               String
   customer_id          String?
-  user                 User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user                 User    @relation(fields: [user_id], references: [id])
 
   @@map("subscriptions")
 }
@@ -155,16 +155,16 @@ model Order {
   address        String
   zip_code       String
   profiles       OrderProfile[]
-  user           User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user           User           @relation(fields: [user_id], references: [id])
 
   @@map("orders")
 }
 
 model OrderProfile {
   order_id   String  @map("order_id")
-  order      Order   @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  order      Order   @relation(fields: [order_id], references: [id])
   profile_id String  @map("profile_id")
-  profile    Profile @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  profile    Profile @relation(fields: [profile_id], references: [id])
 
   @@id([order_id, profile_id])
   @@map("orders_profiles")
@@ -179,7 +179,7 @@ model Design {
   thumbnail String?
   demo      Boolean    @default(false)
   campaigns Campaign[]
-  user      User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [user_id], references: [id])
 
   @@map("designs")
 }

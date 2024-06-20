@@ -18,6 +18,7 @@ export const FailedToSendPdfToPrintPartnerError = 'Der opstod en fejl under afse
 export const FailedToUpdateProfilesToSentError = 'Der opstod en fejl under opdateringen af profilerne til afsendt';
 export const FailedToUpdateCampaignStatusError = 'Der opstod en fejl under opdateringen af kampagnens status';
 export const FailedToCreateCampaignError = 'Der opstod en fejl under oprettelsen af kampagnen';
+export const FailedToScheduleCampaignError = 'Der opstod en fejl under planlægningen af kampagnen';
 
 export class ErrorWithStatusCode extends Error {
   statusCode: number;
