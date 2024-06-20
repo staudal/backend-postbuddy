@@ -90,6 +90,14 @@ export const fetchBulkOperationData = async (url: string) => {
 };
 
 export const saveOrders = async (userId: string, shopifyOrders: Order[]) => {
+  const user = await prisma.user.findUnique({
+    where: {
+      id: userId,
+    },
+  });
+  if (!user) throw new Error('User not found');
+
+  let ordersAdded = 0;
   const BATCH_SIZE = 20000;
   // Split shopifyOrders into smaller batches
   for (let i = 0; i < shopifyOrders.length; i += BATCH_SIZE) {
@@ -102,13 +110,6 @@ export const saveOrders = async (userId: string, shopifyOrders: Order[]) => {
       },
     });
 
-    const user = await prisma.user.findUnique({
-      where: {
-        id: userId,
-      },
-    });
-    if (!user) throw new Error('User not found');
-
     const newShopifyOrders = batch.filter(
       (shopifyOrder) => !existingDbOrders.some((existingDbOrder) => existingDbOrder.order_id === shopifyOrder.id),
     );
@@ -118,26 +119,32 @@ export const saveOrders = async (userId: string, shopifyOrders: Order[]) => {
         data: newShopifyOrders.map(newShopifyOrder => formatOrderData(newShopifyOrder, userId)),
         skipDuplicates: true,
       });
-    }
 
-    // If existing orders is 0 and new orders is more than 0, it's the first time the user has synced orders. Send email to CV.
-    if (existingDbOrders.length === 0 && newShopifyOrders.length > 0) {
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      (async function () {
-        const { error } = await resend.emails.send({
-          from: 'Postbuddy <noreply@postbuddy.dk>',
-          to: ['jakob@postbuddy.dk'],
-          subject: `Ordre er nu synkroniseret for bruger: ${user.email}`,
-          html: `Det er første gang brugeren ${user.email} har synkroniseret ordrer. De kan nu tilgå analytics på Postbuddy.`,
-        });
-
-        if (error) {
-          return console.error({ error });
-        }
-      })();
+      ordersAdded += newShopifyOrders.length;
     }
   }
-  return shopifyOrders; // All orders processed
+
+  const allOrders = await prisma.order.count({
+    where: { user_id: userId },
+  });
+
+  if (allOrders === 0 && ordersAdded > 0) {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    (async function () {
+      const { error } = await resend.emails.send({
+        from: 'Postbuddy <noreply@postbuddy.dk>',
+        to: ['jakob@postbuddy.dk'],
+        subject: `Ordre er nu synkroniseret for bruger: ${user.email}`,
+        html: `Det er første gang brugeren ${user.email} har synkroniseret ordrer. De kan nu tilgå analytics på Postbuddy.`,
+      });
+
+      if (error) {
+        logtail.error(`Failed to send email: ${error}`);
+      }
+    })();
+  }
+
+  return shopifyOrders;
 };
 
 export const processOrdersForCampaigns = async (user: any, allOrders: PrismaOrder[]) => {
