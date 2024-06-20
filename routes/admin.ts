@@ -90,12 +90,14 @@ router.put(`/users/:id`, async (req, res) => {
     return res.status(403).json({ error: InsufficientRightsError });
   }
 
-  // check if email already exists
-  const existingUser = await prisma.user.findUnique({
-    where: { email },
-  });
-  if (existingUser) {
-    return res.status(400).json({ error: UserAlreadyExistsError });
+  // check if email already exists if it's provided
+  if (email) {
+    const existingUser = await prisma.user.findUnique({
+      where: { email },
+    });
+    if (existingUser && existingUser.id !== id) {
+      return res.status(400).json({ error: UserAlreadyExistsError });
+    }
   }
 
   await prisma.user.update({
