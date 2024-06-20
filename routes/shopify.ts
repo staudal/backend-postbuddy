@@ -21,6 +21,8 @@ router.post('/bulk-query-trigger', async (req, res) => {
       return res.status(404).json({ error: `Bruger med id ${user_id} findes ikke` });
     }
 
+    logtail.info(`Triggering bulk query for user with email ${user.email}`);
+
     const shopifyIntegration = user.integrations.find(integration => integration.type === 'shopify');
 
     if (!shopifyIntegration || !shopifyIntegration.token) {
@@ -93,6 +95,8 @@ router.post('/bulk-query-trigger', async (req, res) => {
       return res.status(500).json({ error: `Der opstod en fejl under oprettelse af bulk query for bruger ${user.id}: ${data.errors}` });
     }
 
+    logtail.info(`Triggered bulk query for user with email ${user.email}`);
+
     return res.status(200).json({ message: `Bulk query oprettet for bruger ${user.id}` });
   } catch (error: any) {
     logtail.error(error.message);
@@ -121,6 +125,8 @@ router.post('/bulk-query-finished', async (req, res) => {
   if (!user) {
     return res.status(404).json({ error: `Bruger med user_id ${state} findes ikke` });
   }
+
+  logtail.info(`Processing bulk query for user with email ${user.email}`);
 
   const shopifyToken = user.integrations.find((integration: any) => integration.type === 'shopify')?.token;
 
@@ -160,6 +166,8 @@ router.post('/bulk-query-finished', async (req, res) => {
     logtail.error(error.message);
     return res.status(error.statusCode).json({ error: error.message });
   }
+
+  logtail.info(`Processed bulk query for user with email ${user.email}`);
 
   return res.status(200).json({ message: "ok" });
 });
