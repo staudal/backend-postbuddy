@@ -25,7 +25,7 @@ export const loadUserWithShopifyIntegration = async (userId: string) => {
   });
 };
 
-export const getBulkOperationUrl = async (shop: string, token: string, apiId: string) => {
+export const getBulkOperationUrl = async (shop: string, token: string, apiId: string, userId: string) => {
   const response = await fetch(
     `https://${shop}.myshopify.com/admin/api/2021-10/graphql.json`,
     {
@@ -52,80 +52,84 @@ export const getBulkOperationUrl = async (shop: string, token: string, apiId: st
   const data: any = await response.json();
 
   if (!response.ok || !data.data?.node?.url) {
-    throw new Error(`Failed to fetch bulk operation URL: ${data.errors}`);
+    throw new ErrorWithStatusCode(`Failed to fetch bulk operation URL for user with id ${userId}: ${data.errors}`, 500);
   }
 
   return data.data.node.url;
 };
 
-export const fetchBulkOperationData = async (url: string) => {
+export const fetchBulkOperationData = async (url: string, userId: string) => {
   const orderResponse = await fetch(url);
 
   if (!orderResponse.ok || !orderResponse.body) {
-    throw new Error(`Failed to fetch bulk operation data: ${orderResponse.statusText}`);
+    throw new ErrorWithStatusCode(`Failed to fetch bulk operation data for user with id ${userId}: ${orderResponse.statusText}`, 500);
   }
 
-  const reader = orderResponse.body.getReader();
-  const decoder = new TextDecoder();
-  let orders: Order[] = [];
-  let responseBody = '';
+  try {
+    const reader = orderResponse.body.getReader();
+    const decoder = new TextDecoder();
+    let orders: Order[] = [];
+    let responseBody = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    responseBody += decoder.decode(value, { stream: !done });
+    while (true) {
+      const { done, value } = await reader.read();
+      responseBody += decoder.decode(value, { stream: !done });
 
-    if (done) break;
-  }
-
-  const lines = responseBody.trim().split('\n');
-
-  for (const line of lines) {
-    if (line) {
-      const order: Order = JSON.parse(line);
-      orders.push(order);
+      if (done) break;
     }
-  }
 
-  return orders;
+    const lines = responseBody.trim().split('\n');
+
+    for (const line of lines) {
+      if (line) {
+        const order: Order = JSON.parse(line);
+        orders.push(order);
+      }
+    }
+
+    return orders;
+  } catch (error) {
+    throw new ErrorWithStatusCode(`Failed to read bulk operation data for user with id ${userId}: ${error}`, 500);
+  }
 };
 
-export const saveOrders = async (userId: string, shopifyOrders: Order[]) => {
-  const user = await prisma.user.findUnique({
-    where: {
-      id: userId,
-    },
-  });
-  if (!user) throw new Error('User not found');
+export const saveOrders = async (user: User, shopifyOrders: Order[]) => {
+  logtail.info(`Saving orders for user ${user.id}`);
 
   let ordersAdded = 0;
   const BATCH_SIZE = 20000;
-  // Split shopifyOrders into smaller batches
-  for (let i = 0; i < shopifyOrders.length; i += BATCH_SIZE) {
-    const batch = shopifyOrders.slice(i, i + BATCH_SIZE);
 
-    const existingDbOrders = await prisma.order.findMany({
-      where: {
-        user_id: userId,
-        order_id: { in: batch.map(shopifyOrder => shopifyOrder.id) },
-      },
-    });
+  try {
+    for (let i = 0; i < shopifyOrders.length; i += BATCH_SIZE) {
+      const batch = shopifyOrders.slice(i, i + BATCH_SIZE);
 
-    const newShopifyOrders = batch.filter(
-      (shopifyOrder) => !existingDbOrders.some((existingDbOrder) => existingDbOrder.order_id === shopifyOrder.id),
-    );
-
-    if (newShopifyOrders.length > 0) {
-      await prisma.order.createMany({
-        data: newShopifyOrders.map(newShopifyOrder => formatOrderData(newShopifyOrder, userId)),
-        skipDuplicates: true,
+      const existingDbOrders = await prisma.order.findMany({
+        where: {
+          user_id: user.id,
+          order_id: { in: batch.map(shopifyOrder => shopifyOrder.id) },
+        },
       });
 
-      ordersAdded += newShopifyOrders.length;
+      const newShopifyOrders = batch.filter(
+        (shopifyOrder) => !existingDbOrders.some((existingDbOrder) => existingDbOrder.order_id === shopifyOrder.id),
+      );
+
+      if (newShopifyOrders.length > 0) {
+        await prisma.order.createMany({
+          data: newShopifyOrders.map(newShopifyOrder => formatOrderData(newShopifyOrder, user.id)),
+          skipDuplicates: true,
+        });
+
+        ordersAdded += newShopifyOrders.length;
+      }
     }
+  } catch (error) {
+    logtail.error(`Failed to save orders for user ${user.id}: ${error}`);
+    throw new ErrorWithStatusCode(`Failed to save orders for user ${user.id}`, 500);
   }
 
   const allOrders = await prisma.order.count({
-    where: { user_id: userId },
+    where: { user_id: user.id },
   });
 
   if (allOrders === 0 && ordersAdded > 0) {
@@ -148,47 +152,56 @@ export const saveOrders = async (userId: string, shopifyOrders: Order[]) => {
 };
 
 export const processOrdersForCampaigns = async (user: any, allOrders: PrismaOrder[]) => {
-  const campaigns = user.campaigns;
-  const profilePromises = allOrders.map(allOrder => findAndUpdateProfile(allOrder, campaigns));
-  return await Promise.all(profilePromises);
+  try {
+    const campaigns = user.campaigns;
+    const profilePromises = allOrders.map(allOrder => findAndUpdateProfile(allOrder, campaigns));
+    return await Promise.all(profilePromises);
+  } catch (error: any) {
+    throw new ErrorWithStatusCode(error.message, error.statusCode);
+  }
 };
 
 export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any[]) => {
-  for (const campaign of campaigns) {
-    const campaignStartDate = new Date(campaign.start_date);
-    const campaignEndDate = new Date(campaignStartDate);
-    campaignEndDate.setDate(campaignEndDate.getDate() + 60);
+  logtail.info(`Processing orders for user ${allOrder.user_id}`);
+  try {
+    for (const campaign of campaigns) {
+      const campaignStartDate = new Date(campaign.start_date);
+      const campaignEndDate = new Date(campaignStartDate);
+      campaignEndDate.setDate(campaignEndDate.getDate() + 60);
 
-    const shopifyOrderCreatedAt = new Date(allOrder.created_at);
+      const shopifyOrderCreatedAt = new Date(allOrder.created_at);
 
-    if (shopifyOrderCreatedAt >= campaignStartDate && shopifyOrderCreatedAt <= campaignEndDate) {
-      const profiles = await prisma.profile.findMany({
-        where: buildProfileWhereClause(allOrder, campaign.segment_id),
-        include: { orders: true },
-      });
+      if (shopifyOrderCreatedAt >= campaignStartDate && shopifyOrderCreatedAt <= campaignEndDate) {
+        const profiles = await prisma.profile.findMany({
+          where: buildProfileWhereClause(allOrder, campaign.segment_id),
+          include: { orders: true },
+        });
 
-      if (profiles.length > 0) {
-        for (const profile of profiles) {
-          const existingDbOrder = await prisma.orderProfile.findFirst({
-            where: {
-              order_id: allOrder.id,
-              profile_id: profile.id,
-            },
-          });
+        if (profiles.length > 0) {
+          for (const profile of profiles) {
+            const existingDbOrder = await prisma.orderProfile.findFirst({
+              where: {
+                order_id: allOrder.id,
+                profile_id: profile.id,
+              },
+            });
 
-          if (existingDbOrder) {
-            continue;
+            if (existingDbOrder) {
+              continue;
+            }
+
+            await prisma.orderProfile.create({
+              data: {
+                order_id: allOrder.id,
+                profile_id: profile.id,
+              },
+            });
           }
-
-          await prisma.orderProfile.create({
-            data: {
-              order_id: allOrder.id,
-              profile_id: profile.id,
-            },
-          });
         }
       }
     }
+  } catch (error: any) {
+    throw new ErrorWithStatusCode(error.message, 500);
   }
 };
 
@@ -313,7 +326,6 @@ export async function triggerShopifyBulkQueries() {
     );
 
     if (!shopifyIntegration || !shopifyIntegration.token) {
-      console.error(`User ${user.id} does not have a valid Shopify integration`);
       return Promise.resolve();
     }
 

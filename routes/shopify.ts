@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { prisma } from '../app';
+import { logtail, prisma } from '../app';
 import { fetchBulkOperationData, getBulkOperationUrl, loadUserWithShopifyIntegration, processOrdersForCampaigns, saveOrders } from '../functions';
 
 const router = Router();
@@ -103,7 +103,15 @@ router.post('/bulk-query-finished', async (req, res) => {
     return res.status(400).json({ error: 'Mangler påkrævede parametre' });
   }
 
-  const user = await loadUserWithShopifyIntegration(state as string);
+  const user = await prisma.user.findUnique({
+    where: { id: state as string },
+    include: {
+      integrations: true,
+      campaigns: {
+        include: { segment: true },
+      },
+    },
+  });
 
   if (!user) {
     return res.status(404).json({ error: `Bruger med user_id ${state} findes ikke` });
@@ -112,16 +120,41 @@ router.post('/bulk-query-finished', async (req, res) => {
   const shopifyToken = user.integrations.find((integration: any) => integration.type === 'shopify')?.token;
 
   if (!shopifyToken) {
+    logtail.error(`Running bulk query for user with email ${user.email} failed: User does not have a valid Shopify integration`);
     return res.status(404).json({ error: `Bruger med user_id ${state} har ikke en gyldig Shopify-integration` });
   }
 
-  const url = await getBulkOperationUrl(shop as string, shopifyToken, admin_graphql_api_id);
-  const shopifyOrders = await fetchBulkOperationData(url);
+  let url: string;
+  try {
+    url = await getBulkOperationUrl(shop as string, shopifyToken, admin_graphql_api_id, user.id);
+  } catch (error: any) {
+    logtail.error(error.message);
+    return res.status(error.statusCode).json({ error: error.message });
+  }
 
-  await saveOrders(user.id, shopifyOrders);
+  let shopifyOrders: any;
+  try {
+    shopifyOrders = await fetchBulkOperationData(url, user.id);
+  } catch (error: any) {
+    logtail.error(error.message);
+    return res.status(error.statusCode).json({ error: error.message });
+  }
+
+  try {
+    await saveOrders(user, shopifyOrders);
+  } catch (error: any) {
+    logtail.error(error.message);
+    return res.status(error.statusCode).json({ error: error.message });
+  }
 
   const allOrders = await prisma.order.findMany({ where: { user_id: user.id } });
-  await processOrdersForCampaigns(user, allOrders);
+
+  try {
+    await processOrdersForCampaigns(user, allOrders);
+  } catch (error: any) {
+    logtail.error(error.message);
+    return res.status(error.statusCode).json({ error: error.message });
+  }
 
   return res.status(200).json({ message: "ok" });
 });
