@@ -19,6 +19,7 @@
     "formidable": "^3.5.1",
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3",
+    "p-limit": "^5.0.0",
     "pdf-lib": "^1.17.1",
     "resend": "^3.3.0",
     "ssh2-sftp-client": "^10.0.3",

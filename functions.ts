@@ -155,12 +155,15 @@ export const processOrdersForCampaigns = async (user: any, allOrders: PrismaOrde
   logtail.info(`Processing orders for user ${user.id}`);
   try {
     const campaigns = user.campaigns;
-    const profilePromises = allOrders.map(allOrder => findAndUpdateProfile(allOrder, campaigns));
-    return await Promise.all(profilePromises);
+    for (const allOrder of allOrders) {
+      await findAndUpdateProfile(allOrder, campaigns);
+    }
+    return;
   } catch (error: any) {
     throw new ErrorWithStatusCode(error.message, error.statusCode);
   }
 };
+
 
 export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any[]) => {
   try {
@@ -247,11 +250,12 @@ export const getAddressComponents = (addressFull: string) => {
 };
 
 export async function triggerShopifyBulkQueries() {
+
   const users = await prisma.user.findMany({
     where: {
       integrations: {
         some: {
-          type: "shopify",
+          type: 'shopify',
         },
       },
     },
@@ -272,58 +276,58 @@ export async function triggerShopifyBulkQueries() {
   const shopifyApiVersion = '2021-10'; // Ideally, this should be a configurable constant
 
   const shopifyBulkOperationQuery = `
-      mutation {
-          bulkOperationRunQuery(
-            query: """
-            {
-              orders(query: "created_at:>${dateOnly}") {
+  mutation {
+    bulkOperationRunQuery(
+      query: """
+      {
+        orders(query: "created_at:>${dateOnly}") {
           edges {
-          node {
-          id
-                    totalPriceSet {
-          shopMoney {
-          amount
-                        currencyCode
-        }
-                    }
-                    customer {
-        firstName
-        lastName
-        email
-        addresses(first: 1) {
-          address1
-          zip
-          city
-          country
+            node {
+              id
+              totalPriceSet {
+                shopMoney {
+                  amount
+                  currencyCode
+                }
+              }
+              customer {
+                firstName
+                lastName
+                email
+                addresses(first: 1) {
+                  address1
+                  zip
+                  city
+                  country
+                }
+              }
+              createdAt
+              discountCodes
+            }
+          }
         }
       }
-      createdAt
-      discountCodes
+    """
+    ) {
+      bulkOperation {
+        id
+        status
+      }
+      userErrors {
+        field
+        message
+      }
     }
   }
-}
-            }
-"""
-        ) {
-          bulkOperation {
-    id
-    status
-  }
-          userErrors {
-    field
-    message
-  }
-}
-      }
 `;
 
-  const userPromises = users.map(async (user) => {
+  for (const user of users) {
     const shopifyIntegration = user.integrations.find(
       (integration) => integration.type === 'shopify'
     );
 
     if (!shopifyIntegration || !shopifyIntegration.token) {
-      return Promise.resolve();
+      continue;
     }
 
     const shopifyApiUrl = `https://${shopifyIntegration.shop}.myshopify.com/admin/api/${shopifyApiVersion}/graphql.json`;
@@ -332,21 +336,24 @@ export async function triggerShopifyBulkQueries() {
       'X-Shopify-Access-Token': shopifyIntegration.token,
     };
 
-    const response = await fetch(shopifyApiUrl, {
-      method: 'POST',
-      headers: shopifyApiHeaders,
-      body: JSON.stringify({ query: shopifyBulkOperationQuery }),
-    });
+    try {
+      const response = await fetch(shopifyApiUrl, {
+        method: 'POST',
+        headers: shopifyApiHeaders,
+        body: JSON.stringify({ query: shopifyBulkOperationQuery }),
+      });
 
-    const data: any = await response.json();
+      const data: any = await response.json();
 
-    if (!response.ok) {
-      logtail.error(`Failed to trigger Shopify bulk query for user ${user.id}: ${data.errors}`);
+      if (!response.ok) {
+        logtail.error(`Failed to trigger Shopify bulk query for user ${user.id}: ${data.errors}`);
+      } else {
+        logtail.info(`Successfully triggered Shopify bulk query for user ${user.id}`);
+      }
+    } catch (error: any) {
+      logtail.error(`Failed to trigger Shopify bulk query for user ${user.id}: ${error.message}`);
     }
-  });
-
-  await Promise.allSettled(userPromises);
-  logtail.info('Triggered Shopify bulk queries for all users');
+  }
 }
 
 export async function billUserForLettersSent(profilesLength: number, user_id: string) {
