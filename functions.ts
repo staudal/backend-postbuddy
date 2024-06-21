@@ -152,7 +152,6 @@ export const saveOrders = async (user: User, shopifyOrders: Order[]) => {
 };
 
 export const processOrdersForCampaigns = async (user: any, allOrders: PrismaOrder[]) => {
-  logtail.info(`Processing orders for user ${user.id}`);
   try {
     const campaigns = user.campaigns;
     for (const allOrder of allOrders) {
@@ -250,7 +249,6 @@ export const getAddressComponents = (addressFull: string) => {
 };
 
 export async function triggerShopifyBulkQueries() {
-
   const users = await prisma.user.findMany({
     where: {
       integrations: {

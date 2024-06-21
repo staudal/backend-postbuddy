@@ -161,7 +161,9 @@ router.post('/bulk-query-finished', async (req, res) => {
   const allOrders = await prisma.order.findMany({ where: { user_id: user.id } });
 
   try {
+    logtail.info(`Processing orders for user with email ${user.email}`);
     await processOrdersForCampaigns(user, allOrders);
+    logtail.info(`Processed orders for user with email ${user.email}`);
   } catch (error: any) {
     logtail.error(error.message);
     return res.status(error.statusCode).json({ error: error.message });
