@@ -22,3 +22,4 @@ export const testProfile: Profile = {
   letter_sent: false,
   letter_sent_at: null,
 }
+export const pricePerLetter = 7.5

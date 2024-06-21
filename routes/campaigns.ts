@@ -12,36 +12,77 @@ router.get('/', async (req, res) => {
   const user_id = req.body.user_id;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
-  const dbUser = await prisma.user.findUnique({
-    where: { id: user_id },
-  });
-  if (!dbUser) return UserNotFoundError;
+  try {
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user_id },
+    });
+    if (!dbUser) return res.status(404).json({ error: 'UserNotFoundError' });
 
-  const campaigns = await prisma.campaign.findMany({
-    where: { user_id: dbUser.id, demo: dbUser.demo },
-    include: {
-      segment: {
-        include: {
-          profiles: {
-            include: {
-              orders: {
-                include: {
-                  order: true
+    // Fetch campaigns including necessary aggregation data
+    const campaigns = await prisma.campaign.findMany({
+      where: { user_id: dbUser.id, demo: dbUser.demo },
+      include: {
+        segment: {
+          include: {
+            profiles: {
+              select: {
+                first_name: true,
+                last_name: true,
+                address: true,
+                zip_code: true,
+                city: true,
+                email: true,
+                country: true,
+                letter_sent: true,
+                letter_sent_at: true,
+                orders: {
+                  select: {
+                    order: {
+                      select: {
+                        amount: true,
+                      }
+                    }
+                  }
                 }
               }
             }
           }
         },
+        design: true,
       },
-      design: true,
-    },
-    orderBy: {
-      created_at: "desc",
-    },
-  });
+      orderBy: {
+        created_at: "desc",
+      },
+    });
 
-  res.json(campaigns);
-})
+    // Process the data on the backend
+    const campaignData = campaigns.map((campaign) => {
+      const lettersSentCount = campaign.segment.profiles.filter(
+        (profile) => profile.letter_sent
+      ).length;
+
+      const campaignRevenue = campaign.segment.profiles.reduce((acc, profile) => {
+        if (profile.orders.length > 0) {
+          return acc + profile.orders.reduce((orderAcc, orderProfile) => {
+            return orderAcc + (orderProfile.order.amount || 0);
+          }, 0);
+        }
+        return acc;
+      }, 0);
+
+      return {
+        ...campaign,
+        lettersSent: lettersSentCount,
+        campaignRevenue,
+      };
+    });
+
+    return res.json(campaignData);
+  } catch (error: any) {
+    logtail.error(`Failed to fetch campaigns for user ${user_id}: ${error.message}`);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
 
 router.post('/', async (req, res) => {
   const { user_id, name, type, segment_id, design_id, discountCodes, start_date } = req.body;
