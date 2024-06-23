@@ -21,8 +21,6 @@ router.post('/bulk-query-trigger', async (req, res) => {
       return res.status(404).json({ error: `Bruger med id ${user_id} findes ikke` });
     }
 
-    logtail.info(`Triggering bulk query for user with email ${user.email}`);
-
     const shopifyIntegration = user.integrations.find(integration => integration.type === 'shopify');
 
     if (!shopifyIntegration || !shopifyIntegration.token) {
@@ -125,8 +123,6 @@ router.post('/bulk-query-finished', async (req, res) => {
   if (!user) {
     return res.status(404).json({ error: `Bruger med user_id ${state} findes ikke` });
   }
-
-  logtail.info(`Processing bulk query for user with email ${user.email}`);
 
   const shopifyToken = user.integrations.find((integration: any) => integration.type === 'shopify')?.token;
 
