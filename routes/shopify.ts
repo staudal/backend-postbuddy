@@ -158,12 +158,27 @@ router.post('/bulk-query-finished', async (req, res) => {
     return res.status(error.statusCode).json({ error: error.message });
   }
 
-  const allOrders = await prisma.order.findMany({ where: { user_id: user.id } });
+  let allOrders: any[] = [];
+  const batchSize = 10000;
+  let skip = 0;
+
+  while (true) {
+    const ordersBatch = await prisma.order.findMany({
+      where: { user_id: user.id },
+      skip,
+      take: batchSize,
+    });
+
+    if (ordersBatch.length === 0) {
+      break;
+    }
+
+    allOrders = allOrders.concat(ordersBatch);
+    skip += batchSize;
+  }
 
   try {
-    logtail.info(`Processing orders for user with email ${user.email}`);
     await processOrdersForCampaigns(user, allOrders);
-    logtail.info(`Processed orders for user with email ${user.email}`);
   } catch (error: any) {
     logtail.error(error.message);
     return res.status(error.statusCode).json({ error: error.message });
