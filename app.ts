@@ -22,11 +22,10 @@ import profilesRouter from "./routes/profiles";
 import adminRoute from "./routes/admin";
 import { errorHandler } from "./errorhandler";
 import pm2, { ProcessDescription } from 'pm2';
-
 import { activateScheduledCampaigns, periodicallySendLetters, triggerShopifyBulkQueries, updateKlaviyoProfiles } from "./functions";
 import path from "path";
-
 import { Logtail } from "@logtail/node";
+
 export const logtail = new Logtail("QrngmT7yBCxZSM4zsqSn4jgX");
 
 const app = express();
@@ -40,60 +39,53 @@ app.use('/cesdk', express.static(path.join(__dirname, 'cesdk')));
 
 // Function to setup cron jobs
 const setupCronJobs = () => {
-  // trigger cron jobs in this order
-  // 1. triggerShopifyBulkQueries - every day at 00:00
-  // 2. updateKlaviyoProfiles - every day at 01:00
-  // 3. activateScheduledCampaigns - once per hour
-  // 4. periodicSendLetters - once per hour
   cron.schedule('0 0 * * *', triggerShopifyBulkQueries); // every day at 00:00
   cron.schedule('0 1 * * *', updateKlaviyoProfiles); // every day at 01:00
   cron.schedule('0 * * * *', activateScheduledCampaigns); // once per hour
   cron.schedule('0 * * * *', periodicallySendLetters); // once per hour
 };
 
-// Connect to PM2 and determine the leader
-pm2.connect((err) => {
-  if (err) {
-    console.error(err);
-    process.exit(2);
-  }
-
-  pm2.list((err, list) => {
+if (process.env.NODE_ENV === "production") {
+  // Connect to PM2 and determine the leader only in production
+  pm2.connect((err) => {
     if (err) {
       console.error(err);
       process.exit(2);
     }
 
-    // Type guard to check if pm_id is defined
-    const hasValidPmId = (process: ProcessDescription): process is ProcessDescription & { pm_id: number } => {
-      return process.pm_id !== undefined;
-    };
+    pm2.list((err, list) => {
+      if (err) {
+        console.error(err);
+        process.exit(2);
+      }
 
-    // Filter processes that have a valid pm_id
-    const validProcesses = list.filter(hasValidPmId);
+      const hasValidPmId = (process: ProcessDescription): process is ProcessDescription & { pm_id: number } => {
+        return process.pm_id !== undefined;
+      };
 
-    if (validProcesses.length === 0) {
-      console.error('No valid processes found');
-      process.exit(2);
-    }
+      const validProcesses = list.filter(hasValidPmId);
 
-    // Determine the leader based on process ids
-    const leaderProcess = validProcesses.reduce<ProcessDescription & { pm_id: number }>((leader, process) => {
-      return process.pm_id < leader.pm_id ? process : leader;
-    }, validProcesses[0]);
+      if (validProcesses.length === 0) {
+        console.error('No valid processes found');
+        process.exit(2);
+      }
 
-    // Check if the current process is the leader
-    const currentPmId = parseInt(process.env.pm_id!, 10);
-    if (leaderProcess.pm_id === currentPmId) {
-      console.log(`This instance is the leader: ${currentPmId}`);
-      setupCronJobs(); // Schedule the cron jobs only on the leader
-    } else {
-      console.log(`This instance is not the leader: ${currentPmId}`);
-    }
+      const leaderProcess = validProcesses.reduce<ProcessDescription & { pm_id: number }>((leader, process) => {
+        return process.pm_id < leader.pm_id ? process : leader;
+      }, validProcesses[0]);
 
-    pm2.disconnect();
+      const currentPmId = parseInt(process.env.pm_id!, 10);
+      if (leaderProcess.pm_id === currentPmId) {
+        console.log(`This instance is the leader: ${currentPmId}`);
+        setupCronJobs(); // Schedule the cron jobs only on the leader
+      } else {
+        console.log(`This instance is not the leader: ${currentPmId}`);
+      }
+
+      pm2.disconnect();
+    });
   });
-});
+}
 
 // Setup routes
 app.use('/', indexRouter);
@@ -121,7 +113,7 @@ app.use('/admin', authenticateToken, adminOnly, adminRoute);
 
 app.use(errorHandler)
 
-const port = process.env.PORT || 8000
+const port = process.env.PORT || 8000;
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
