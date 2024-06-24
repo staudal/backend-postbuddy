@@ -199,40 +199,44 @@ export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any
           }
         } else {
           // If no profile is found but the order discount code matches a campaign discount code, add the revenue to the campaign
-          const profile = await prisma.profile.findFirst({
-            where: {
-              id: `additional-revenue-${campaign.id}`,
-            },
-          });
-          if (!profile) {
-            await prisma.profile.create({
-              data: {
+          const discountCodes = allOrder.discount_codes;
+          const matchingDiscountCode = campaign.discount_codes.find((campaignDiscountCode: string) => discountCodes.includes(campaignDiscountCode));
+          if (matchingDiscountCode) {
+            const profile = await prisma.profile.findFirst({
+              where: {
                 id: `additional-revenue-${campaign.id}`,
-                first_name: 'additional-revenue',
-                last_name: 'additional-revenue',
-                address: 'additional-revenue',
-                zip_code: 'additional-revenue',
-                city: 'additional-revenue',
-                country: 'additional-revenue',
-                segment_id: campaign.segment_id,
-                letter_sent: true,
-                email: 'additional-revenue',
               },
             });
-          }
-          const existingDbOrder = await prisma.orderProfile.findFirst({
-            where: {
-              order_id: allOrder.id,
-              profile_id: `additional-revenue-${campaign.id}`,
-            },
-          });
-          if (!existingDbOrder) {
-            await prisma.orderProfile.create({
-              data: {
+            if (!profile) {
+              await prisma.profile.create({
+                data: {
+                  id: `additional-revenue-${campaign.id}`,
+                  first_name: 'additional-revenue',
+                  last_name: 'additional-revenue',
+                  address: 'additional-revenue',
+                  zip_code: 'additional-revenue',
+                  city: 'additional-revenue',
+                  country: 'additional-revenue',
+                  segment_id: campaign.segment_id,
+                  letter_sent: true,
+                  email: 'additional-revenue',
+                },
+              });
+            }
+            const existingDbOrder = await prisma.orderProfile.findFirst({
+              where: {
                 order_id: allOrder.id,
                 profile_id: `additional-revenue-${campaign.id}`,
               },
             });
+            if (!existingDbOrder) {
+              await prisma.orderProfile.create({
+                data: {
+                  order_id: allOrder.id,
+                  profile_id: `additional-revenue-${campaign.id}`,
+                },
+              });
+            }
           }
         }
       }
