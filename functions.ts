@@ -161,10 +161,10 @@ export const processOrdersForCampaigns = async (user: any, allOrders: PrismaOrde
   }
 };
 
-
 export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any[]) => {
   try {
     for (const campaign of campaigns) {
+      let revenueForDiscountCodesWithNoProfile = 0;
       const campaignStartDate = new Date(campaign.start_date);
       const campaignEndDate = new Date(campaignStartDate);
       campaignEndDate.setDate(campaignEndDate.getDate() + 60);
@@ -173,7 +173,7 @@ export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any
 
       if (shopifyOrderCreatedAt >= campaignStartDate && shopifyOrderCreatedAt <= campaignEndDate) {
         const profiles = await prisma.profile.findMany({
-          where: buildProfileWhereClause(allOrder, campaign.segment_id),
+          where: buildProfileWhereClause(allOrder, campaign.segment_id, revenueForDiscountCodesWithNoProfile),
           include: { orders: true },
         });
 
@@ -197,6 +197,22 @@ export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any
               },
             });
           }
+        } else {
+          // If no profile is found but the order discount code matches a campaign discount code, add the revenue to the campaign
+          const discountCodes = allOrder.discount_codes;
+          const campaignDiscountCodes = campaign.discount_codes;
+          const matchingDiscountCode = discountCodes.find((discountCode: string) => campaignDiscountCodes.includes(discountCode));
+
+          if (matchingDiscountCode) {
+            await prisma.campaign.update({
+              where: { id: campaign.id },
+              data: {
+                additional_revenue: {
+                  increment: allOrder.amount,
+                },
+              },
+            });
+          }
         }
       }
     }
@@ -205,8 +221,8 @@ export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any
   }
 };
 
-// REMOVED DISCOUNT CODES BECAUSE OF SCEWED RESULTS: MULTIPLE PROFILE ARE FOUND FOR THE SAME ORDER BECAUSE OF NON-UNIQUE DISCOUNT CODES
-export const buildProfileWhereClause = (allOrder: PrismaOrder, segmentId: string) => {
+// REMOVED DISCOUNT CODES BECAUSE OF SCEWED RESULTS: MULTIPLE PROFILES ARE FOUND FOR THE SAME ORDER BECAUSE OF NON-UNIQUE DISCOUNT CODES
+export const buildProfileWhereClause = (allOrder: PrismaOrder, segmentId: string, revenueForDiscountCodesWithNoProfile: number) => {
   const firstName = allOrder.first_name.toLowerCase();
   const lastName = allOrder.last_name.toLowerCase();
   const email = allOrder.email.toLowerCase();
