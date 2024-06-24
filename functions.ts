@@ -1139,15 +1139,19 @@ export async function periodicallySendLetters() {
       }
     });
 
+
     if (!segment || segment.profiles.length === 0 || !campaign.design || !campaign.design.blob) {
       continue;
     }
 
+    // if there is a profile with id "additional-revenue-{campaign.id}", then remove it
+    const updatedProfiles = segment.profiles.filter((profile) => profile.id !== `additional-revenue-${campaign.id}`);
+
     try {
       if (!segment.demo) {
-        await sendLettersForNonDemoUser(campaign.user_id, segment.profiles, campaign.design.blob, campaign.id)
+        await sendLettersForNonDemoUser(campaign.user_id, updatedProfiles, campaign.design.blob, campaign.id)
       } else {
-        await sendLettersForDemoUser(segment.profiles, campaign.id, campaign.user_id)
+        await sendLettersForDemoUser(updatedProfiles, campaign.id, campaign.user_id)
       }
     } catch (error: any) {
       logtail.error(`An error occured while trying to periodically activate a campaign with id ${campaign.id}`);
