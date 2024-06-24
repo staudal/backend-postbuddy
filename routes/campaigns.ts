@@ -70,10 +70,14 @@ router.get('/', async (req, res) => {
         return acc;
       }, 0);
 
+
+      // Update the additional_revenue field
+      const newAdditionalRevenue = (campaign.additional_revenue || 0) + campaignRevenue;
+
       return {
         ...campaign,
         lettersSent: lettersSentCount,
-        campaignRevenue,
+        newAdditionalRevenue,
       };
     });
 
