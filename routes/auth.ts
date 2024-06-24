@@ -11,9 +11,12 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 router.post('/signup', async (req, res) => {
   const { firstName, lastName, company, email, password } = req.body;
 
+  // email to lowercase
+  const emailToLower = email.toLowerCase();
+
   // Check if the user already exists
   const existingUser = await prisma.user.findUnique({
-    where: { email },
+    where: { email: emailToLower },
   });
 
   if (existingUser) {
@@ -29,7 +32,7 @@ router.post('/signup', async (req, res) => {
       first_name: firstName,
       last_name: lastName,
       company,
-      email,
+      email: emailToLower,
       password: hashedPassword,
     },
   });
@@ -71,9 +74,11 @@ router.post('/signup', async (req, res) => {
 router.post('/signin', async (req, res) => {
   const { email, password } = req.body;
 
+  const emailToLower = email.toLowerCase();
+
   // Check if the user exists
   const user = await prisma.user.findUnique({
-    where: { email },
+    where: { email: emailToLower },
   });
 
   if (!user) {
