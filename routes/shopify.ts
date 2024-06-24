@@ -110,16 +110,11 @@ router.post('/bulk-query-finished', async (req, res) => {
     return res.status(400).json({ error: 'Mangler påkrævede parametre' });
   }
 
-  const response = await fetch("https://zeplo.to/https://api.postbuddy.dk/shopify/process-orders?_token=VnfWdJ5hezUaYsteonH6Ns2l66i5LwaY39L1SU", {
+  fetch("https://zeplo.to/https://api.postbuddy.dk/shopify/process-orders?_token=VnfWdJ5hezUaYsteonH6Ns2l66i5LwaY39L1SU", {
     method: 'POST',
     body: JSON.stringify({ admin_graphql_api_id, shop, state }),
     headers: { 'Content-Type': 'application/json' },
   });
-
-  if (!response.ok) {
-    console.error(response);
-    return res.status(500).json({ error: 'Der opstod en fejl under behandling af ordrer' });
-  }
 
   return res.status(200).json({ message: "ok" });
 });
@@ -161,8 +156,6 @@ router.post('/process-orders', async (req, res) => {
     logtail.error(error.message);
     return res.status(error.statusCode).json({ error: error.message });
   }
-
-  res.status(200).json({ message: "ok" });
 
   let shopifyOrders: any;
   try {
