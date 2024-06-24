@@ -75,22 +75,21 @@ model Segment {
 }
 
 model Campaign {
-  id                 String   @id @default(cuid())
-  name               String
-  status             String
-  type               String
-  created_at         DateTime @default(now())
-  user_id            String
-  segment_id         String   @unique
-  design_id          String?
-  discount_codes     String[]
-  start_date         DateTime
-  additional_revenue Float?
-  confirmation_url   String?  @unique
-  demo               Boolean  @default(false)
-  design             Design?  @relation(fields: [design_id], references: [id])
-  segment            Segment  @relation(fields: [segment_id], references: [id])
-  user               User     @relation(fields: [user_id], references: [id])
+  id               String   @id @default(cuid())
+  name             String
+  status           String
+  type             String
+  created_at       DateTime @default(now())
+  user_id          String
+  segment_id       String   @unique
+  design_id        String?
+  discount_codes   String[]
+  start_date       DateTime
+  confirmation_url String?  @unique
+  demo             Boolean  @default(false)
+  design           Design?  @relation(fields: [design_id], references: [id])
+  segment          Segment  @relation(fields: [segment_id], references: [id])
+  user             User     @relation(fields: [user_id], references: [id])
 
   @@map("campaigns")
 }
