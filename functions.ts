@@ -205,13 +205,14 @@ export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any
   }
 };
 
+// REMOVED DISCOUNT CODES BECAUSE OF SCEWED RESULTS: MULTIPLE PROFILE ARE FOUND FOR THE SAME ORDER BECAUSE OF NON-UNIQUE DISCOUNT CODES
 export const buildProfileWhereClause = (allOrder: PrismaOrder, segmentId: string) => {
   const firstName = allOrder.first_name.toLowerCase();
   const lastName = allOrder.last_name.toLowerCase();
   const email = allOrder.email.toLowerCase();
   const zip = allOrder.zip_code;
   const addressFull = allOrder.address;
-  const discountCodes = allOrder.discount_codes;
+  /* const discountCodes = allOrder.discount_codes; */
   const address = getAddressComponents(addressFull);
   const lastWordOfLastName = lastName.split(" ").pop() || "";
 
@@ -219,7 +220,7 @@ export const buildProfileWhereClause = (allOrder: PrismaOrder, segmentId: string
     OR: [
       { email },
       { address: { contains: address }, zip_code: zip, first_name: firstName, last_name: lastWordOfLastName },
-      { segment: { campaign: { discount_codes: { hasSome: discountCodes } } } },
+      /* { segment: { campaign: { discount_codes: { hasSome: discountCodes } } } }, */
     ],
     letter_sent: true,
     segment_id: segmentId,
