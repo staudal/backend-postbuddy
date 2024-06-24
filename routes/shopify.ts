@@ -162,6 +162,8 @@ router.post('/process-orders', async (req, res) => {
     return res.status(error.statusCode).json({ error: error.message });
   }
 
+  res.status(200).json({ message: "ok" });
+
   let shopifyOrders: any;
   try {
     shopifyOrders = await fetchBulkOperationData(url, user.id);
