@@ -128,6 +128,7 @@ router.post('/process-orders', async (req, res) => {
   const { admin_graphql_api_id, shop, state } = req.body;
 
   if (!admin_graphql_api_id || !shop || !state) {
+    logtail.error(`Processing bulk query failed because of missing required parameters for user with user_id ${state}`);
     return res.status(400).json({ error: 'Mangler påkrævede parametre' });
   }
 
@@ -142,13 +143,14 @@ router.post('/process-orders', async (req, res) => {
   });
 
   if (!user) {
+    logtail.error(`Processing bulk query failed because user with user_id ${state} does not exist`);
     return res.status(404).json({ error: `Bruger med user_id ${state} findes ikke` });
   }
 
   const shopifyToken = user.integrations.find((integration: any) => integration.type === 'shopify')?.token;
 
   if (!shopifyToken) {
-    logtail.error(`Running bulk query for user with email ${user.email} failed: User does not have a valid Shopify integration`);
+    logtail.error(`Processing bulk query failed because user with user_id ${state} does not have a valid Shopify integration`);
     return res.status(404).json({ error: `Bruger med user_id ${state} har ikke en gyldig Shopify-integration` });
   }
 
