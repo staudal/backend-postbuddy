@@ -199,17 +199,38 @@ export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any
           }
         } else {
           // If no profile is found but the order discount code matches a campaign discount code, add the revenue to the campaign
-          const discountCodes = allOrder.discount_codes;
-          const campaignDiscountCodes = campaign.discount_codes;
-          const matchingDiscountCode = discountCodes.find((discountCode: string) => campaignDiscountCodes.includes(discountCode));
-
-          if (matchingDiscountCode) {
-            await prisma.campaign.update({
-              where: { id: campaign.id },
+          const profile = await prisma.profile.findFirst({
+            where: {
+              id: `additional-revenue-${campaign.id}`,
+            },
+          });
+          if (!profile) {
+            await prisma.profile.create({
               data: {
-                additional_revenue: {
-                  increment: allOrder.amount,
-                },
+                id: `additional-revenue-${campaign.id}`,
+                first_name: 'additional-revenue',
+                last_name: 'additional-revenue',
+                address: 'additional-revenue',
+                zip_code: 'additional-revenue',
+                city: 'additional-revenue',
+                country: 'additional-revenue',
+                segment_id: campaign.segment_id,
+                letter_sent: true,
+                email: 'additional-revenue',
+              },
+            });
+          }
+          const existingDbOrder = await prisma.orderProfile.findFirst({
+            where: {
+              order_id: allOrder.id,
+              profile_id: `additional-revenue-${campaign.id}`,
+            },
+          });
+          if (!existingDbOrder) {
+            await prisma.orderProfile.create({
+              data: {
+                order_id: allOrder.id,
+                profile_id: `additional-revenue-${campaign.id}`,
               },
             });
           }
