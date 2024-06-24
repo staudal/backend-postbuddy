@@ -21,8 +21,6 @@ router.post('/bulk-query-trigger', async (req, res) => {
       return res.status(404).json({ error: `Bruger med id ${user_id} findes ikke` });
     }
 
-    logtail.info(`Triggering bulk query for user with email ${user.email}`);
-
     const shopifyIntegration = user.integrations.find(integration => integration.type === 'shopify');
 
     if (!shopifyIntegration || !shopifyIntegration.token) {
@@ -147,8 +145,6 @@ router.post('/process-orders', async (req, res) => {
     return res.status(404).json({ error: `Bruger med user_id ${state} findes ikke` });
   }
 
-  logtail.info(`Processing bulk query for user with email ${user.email}`);
-
   const shopifyToken = user.integrations.find((integration: any) => integration.type === 'shopify')?.token;
 
   if (!shopifyToken) {
@@ -179,12 +175,27 @@ router.post('/process-orders', async (req, res) => {
     return res.status(error.statusCode).json({ error: error.message });
   }
 
-  const allOrders = await prisma.order.findMany({ where: { user_id: user.id } });
+  let allOrders: any[] = [];
+  const batchSize = 10000;
+  let skip = 0;
+
+  while (true) {
+    const ordersBatch = await prisma.order.findMany({
+      where: { user_id: user.id },
+      skip,
+      take: batchSize,
+    });
+
+    if (ordersBatch.length === 0) {
+      break;
+    }
+
+    allOrders = allOrders.concat(ordersBatch);
+    skip += batchSize;
+  }
 
   try {
-    logtail.info(`Processing orders for user with email ${user.email}`);
     await processOrdersForCampaigns(user, allOrders);
-    logtail.info(`Processed orders for user with email ${user.email}`);
   } catch (error: any) {
     logtail.error(error.message);
     return res.status(error.statusCode).json({ error: error.message });

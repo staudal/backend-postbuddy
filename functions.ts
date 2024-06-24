@@ -94,8 +94,6 @@ export const fetchBulkOperationData = async (url: string, userId: string) => {
 };
 
 export const saveOrders = async (user: User, shopifyOrders: Order[]) => {
-  logtail.info(`Saving orders for user ${user.id}`);
-
   let ordersAdded = 0;
   const BATCH_SIZE = 20000;
 
@@ -948,7 +946,6 @@ export async function sendLettersForDemoUser(profiles: Profile[], campaign_id: s
 }
 
 export async function activateScheduledCampaigns() {
-  logtail.info("Activating scheduled campaigns");
   const campaigns = await prisma.campaign.findMany({
     where: {
       status: "scheduled",
