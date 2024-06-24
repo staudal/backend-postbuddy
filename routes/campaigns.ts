@@ -10,12 +10,13 @@ const router = Router();
 
 router.get('/', async (req, res) => {
   const user_id = req.body.user_id;
-  if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
+  if (!user_id) return res.status(400).json({ error: 'MissingRequiredParametersError' });
 
   try {
     const dbUser = await prisma.user.findUnique({
       where: { id: user_id },
     });
+
     if (!dbUser) return res.status(404).json({ error: 'UserNotFoundError' });
 
     // Fetch campaigns including necessary aggregation data
@@ -26,6 +27,7 @@ router.get('/', async (req, res) => {
           include: {
             profiles: {
               select: {
+                id: true,
                 first_name: true,
                 last_name: true,
                 address: true,
@@ -57,21 +59,23 @@ router.get('/', async (req, res) => {
 
     // Process the data on the backend
     const campaignData = campaigns.map((campaign) => {
-      const lettersSentCount = campaign.segment.profiles.filter(
-        (profile) => profile.letter_sent
-      ).length;
+      const lettersSentCount = campaign.segment.profiles.filter(profile => profile.letter_sent).length;
 
-      const campaignRevenue = campaign.segment.profiles.reduce((acc, profile) => {
-        if (profile.orders.length > 0) {
-          return acc + profile.orders.reduce((orderAcc, orderProfile) => {
-            return orderAcc + (orderProfile.order.amount || 0);
-          }, 0);
-        }
-        return acc;
-      }, 0);
+      const profilesWithTotalAmount = campaign.segment.profiles.map(profile => {
+        const totalAmount = profile.orders.reduce((acc, orderProfile) => {
+          return acc + (orderProfile.order.amount || 0);
+        }, 0);
+        return { ...profile, totalAmount };
+      });
+
+      // Sort profiles based on total order amount in descending order
+      profilesWithTotalAmount.sort((a, b) => b.totalAmount - a.totalAmount);
+
+      const campaignRevenue = profilesWithTotalAmount.reduce((acc, profile) => acc + profile.totalAmount, 0);
 
       return {
         ...campaign,
+        segment: { ...campaign.segment, profiles: profilesWithTotalAmount },
         lettersSent: lettersSentCount,
         campaignRevenue,
       };
