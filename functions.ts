@@ -1096,6 +1096,22 @@ export async function updateKlaviyoProfiles() {
         profilesToAdd.push(...profilesToAddTemp);
       }
 
+      // Remove the profiles where the email of the profile is already in the segment
+      for (const profile of profilesToAdd) {
+        const existingProfile = await prisma.profile.findFirst({
+          where: {
+            OR: [
+              { email: profile.email, segment_id: profile.segment_id },
+              { zip_code: profile.zip_code, address: profile.address, first_name: profile.first_name, last_name: profile.last_name, segment_id: profile.segment_id }
+            ]
+          },
+        });
+
+        if (existingProfile) {
+          profilesToAdd.splice(profilesToAdd.indexOf(profile), 1);
+        }
+      }
+
       // Check if profiles are in Robinson
       const profilesToAddInRobinson = await returnProfilesInRobinson(profilesToAdd);
       profilesToAdd.map((profile) => {
