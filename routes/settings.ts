@@ -8,6 +8,8 @@ router.put('/', async (req, res) => {
   const { user_id, firstName, lastName, company, address, zip, city, country, bufferDays } = req.body;
   if (!user_id) return MissingRequiredParametersError;
 
+  console.log(req.body);
+
   await prisma.user.update({
     where: { id: user_id },
     data: {
@@ -18,7 +20,7 @@ router.put('/', async (req, res) => {
       zip_code: zip,
       city,
       country,
-      bufferDays,
+      buffer_days: bufferDays,
     },
   });
 

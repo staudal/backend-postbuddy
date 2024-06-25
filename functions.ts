@@ -1342,7 +1342,7 @@ export async function checkIfProfileIsInRobinson(profile: ProfileToAdd) {
 }
 
 export async function getRecentProfileIds(user: User) {
-  const daysAgo = subDays(new Date(), user.bufferDays || 10);
+  const daysAgo = subDays(new Date(), user.buffer_days || 10);
   const BATCH_SIZE = 10000;
   let recentProfileIds: string[] = [];
   let skip = 0;

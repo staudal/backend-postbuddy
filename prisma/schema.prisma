@@ -23,7 +23,7 @@ model User {
   access_token String?       @unique
   role         String        @default("user")
   demo         Boolean       @default(false)
-  bufferDays   Int           @default(0)
+  buffer_days  Int           @default(0)
   campaigns    Campaign[]
   designs      Design[]
   integrations Integration[]
