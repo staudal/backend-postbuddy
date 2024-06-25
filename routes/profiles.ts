@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { logtail, prisma } from '../app';
-import { MissingAuthorizationHeaderError, MissingRequiredParametersError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
+import { DuplicateEmailSegmentError, DuplicateProfileSegmentError, MissingAuthorizationHeaderError, MissingRequiredParametersError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
 import { API_URL } from '../constants';
 import { checkIfProfileIsInRobinson } from '../functions';
 
@@ -115,6 +115,31 @@ router.get('/webhook', async (req, res) => {
   // check if segment is connected to a campaign and campaign type is one-off
   if (segment.campaign && segment.campaign.type === 'one-off') {
     return res.status(400).json({ error: 'Segmentet er tilknyttet en kampagne af typen one-off og kan derfor ikke opdateres' });
+  }
+
+  // Check if there is already a profile with that email in the segment
+  const existingProfile = await prisma.profile.findFirst({
+    where: {
+      segment_id,
+      email
+    }
+  });
+  if (existingProfile) {
+    return res.status(400).json({ error: DuplicateEmailSegmentError });
+  }
+
+  // Check if there is already a profile with the same information in the segment
+  const duplicateProfile = await prisma.profile.findFirst({
+    where: {
+      segment_id,
+      first_name,
+      last_name,
+      address,
+      zip_code: zip,
+    }
+  });
+  if (duplicateProfile) {
+    return res.status(400).json({ error: DuplicateProfileSegmentError });
   }
 
   try {
