@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../app';
-import { IntegrationNotFoundError, InternalServerError, MissingRequiredParametersError, SegmentNotFoundError, UserNotFoundError } from '../errors';
+import { DuplicateEmailSegmentError, DuplicateProfileSegmentError, IntegrationNotFoundError, InternalServerError, MissingRequiredParametersError, SegmentNotFoundError, UserNotFoundError } from '../errors';
 import { Profile } from '@prisma/client';
 import { detectDelimiter, generateUniqueFiveDigitId, getKlaviyoSegmentProfilesBySegmentId, returnProfilesInRobinson, splitCSVLine } from '../functions';
 import fs from 'fs';
@@ -270,6 +270,29 @@ router.post('/csv', (req, res) => {
       const wrongCountries = rows.filter((row) => row.country !== "denmark" && row.country !== "danmark" && row.country !== "sweden" && row.country !== "sverige" && row.country !== "germany" && row.country !== "tyskland");
       rows = rows.filter((row) => row.country === "denmark" || row.country === "danmark" || row.country === "sweden" || row.country === "sverige" || row.country === "germany" || row.country === "tyskland");
 
+      // Check if two profiles have the same email
+      const duplicateEmails = rows.filter(
+        (profile, index, self) =>
+          index !== self.findIndex((t) => t.email === profile.email)
+      );
+      if (duplicateEmails.length > 0) {
+        return res.status(400).json({ DuplicateEmailSegmentError });
+      }
+
+      // Check if two profiles have the same address, zip, and first_name + last_name
+      const duplicateProfiles = rows.filter(
+        (profile, index, self) =>
+          index !== self.findIndex((t) =>
+            t.address === profile.address &&
+            t.zip === profile.zip &&
+            t.first_name === profile.first_name &&
+            t.last_name === profile.last_name
+          )
+      );
+      if (duplicateProfiles.length > 0) {
+        return res.status(400).json({ DuplicateProfileSegmentError });
+      }
+
       const newSegment = await prisma.segment.create({
         data: {
           name: segmentName,
@@ -358,6 +381,29 @@ router.post('/klaviyo', async (req, res) => {
     selected_segment.id,
     integration.klaviyo_api_key
   );
+
+  // Check if two profiles have the same email
+  const duplicateEmails = klaviyoSegmentProfiles.validProfiles.filter(
+    (profile, index, self) =>
+      index !== self.findIndex((t) => t.attributes.email === profile.attributes.email)
+  );
+  if (duplicateEmails.length > 0) {
+    return res.status(400).json({ DuplicateEmailSegmentError });
+  }
+
+  // Check if two profiles have the same address, zip, and first_name + last_name
+  const duplicateProfiles = klaviyoSegmentProfiles.validProfiles.filter(
+    (profile, index, self) =>
+      index !== self.findIndex((t) =>
+        t.attributes.location.address1 === profile.attributes.location.address1 &&
+        t.attributes.location.zip === profile.attributes.location.zip &&
+        t.attributes.first_name === profile.attributes.first_name &&
+        t.attributes.last_name === profile.attributes.last_name
+      )
+  );
+  if (duplicateProfiles.length > 0) {
+    return res.status(400).json({ DuplicateProfileSegmentError });
+  }
 
   const newSegment = await prisma.segment.create({
     data: {

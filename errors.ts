@@ -20,6 +20,8 @@ export const FailedToUpdateCampaignStatusError = 'Der opstod en fejl under opdat
 export const FailedToCreateCampaignError = 'Der opstod en fejl under oprettelsen af kampagnen';
 export const FailedToScheduleCampaignError = 'Der opstod en fejl under planlægningen af kampagnen';
 export const MissingAuthorizationHeaderError = 'Manglende autorisationsheader';
+export const DuplicateEmailSegmentError = 'Segmentet indeholder to eller flere profiler med samme email';
+export const DuplicateProfileSegmentError = 'Segmentet indeholder to eller flere profiler med samme informationer';
 
 export class ErrorWithStatusCode extends Error {
   statusCode: number;
