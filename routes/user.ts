@@ -22,6 +22,7 @@ router.get('/', async (req, res) => {
       access_token: true,
       role: true,
       demo: true,
+      bufferDays: true,
     },
   });
 
