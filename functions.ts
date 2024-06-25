@@ -10,6 +10,7 @@ import { createHmac } from 'node:crypto';
 import { API_URL, config } from './constants';
 import { logtail } from './app';
 import { Resend } from 'resend';
+import { subDays } from 'date-fns';
 
 const prisma = new PrismaClient()
 
@@ -1117,49 +1118,58 @@ export async function updateKlaviyoProfiles() {
 }
 
 export async function periodicallySendLetters() {
-  const campaigns = await prisma.campaign.findMany({
-    where: {
-      status: "active",
-    },
-    include: {
-      design: true,
-    }
-  })
+  const users = await prisma.user.findMany();
 
-  for (const campaign of campaigns) {
-    const segment = await prisma.segment.findFirst({
+  for (const user of users) {
+    const campaigns = await prisma.campaign.findMany({
       where: {
-        campaign: {
-          id: campaign.id,
-        },
+        status: "active",
+        user_id: user.id,
       },
       include: {
-        profiles: {
-          where: {
-            letter_sent: false,
-            in_robinson: false,
-          }
+        design: true,
+      }
+    })
+
+    const recentProfileIds = await getRecentProfileIds(user);
+
+    for (const campaign of campaigns) {
+      const segment = await prisma.segment.findFirst({
+        where: {
+          campaign: {
+            id: campaign.id,
+          },
+        },
+        include: {
+          profiles: {
+            where: {
+              letter_sent: false,
+              in_robinson: false,
+              id: {
+                notIn: recentProfileIds,
+              },
+            },
+          },
+        },
+      });
+
+      if (!segment || segment.profiles.length === 0 || !campaign.design || !campaign.design.blob) {
+        continue;
+      }
+
+      // if there is a profile with id "additional-revenue-{campaign.id}", then remove it
+      const updatedProfiles = segment.profiles.filter((profile) => profile.id !== `additional-revenue-${campaign.id}`);
+
+      try {
+        if (!segment.demo) {
+          await sendLettersForNonDemoUser(campaign.user_id, updatedProfiles, campaign.design.blob, campaign.id)
+        } else {
+          await sendLettersForDemoUser(updatedProfiles, campaign.id, campaign.user_id)
         }
+      } catch (error: any) {
+        logtail.error(`An error occured while trying to periodically activate a campaign with id ${campaign.id}`);
+        continue;
       }
-    });
-
-
-    if (!segment || segment.profiles.length === 0 || !campaign.design || !campaign.design.blob) {
-      continue;
-    }
-
-    // if there is a profile with id "additional-revenue-{campaign.id}", then remove it
-    const updatedProfiles = segment.profiles.filter((profile) => profile.id !== `additional-revenue-${campaign.id}`);
-
-    try {
-      if (!segment.demo) {
-        await sendLettersForNonDemoUser(campaign.user_id, updatedProfiles, campaign.design.blob, campaign.id)
-      } else {
-        await sendLettersForDemoUser(updatedProfiles, campaign.id, campaign.user_id)
-      }
-    } catch (error: any) {
-      logtail.error(`An error occured while trying to periodically activate a campaign with id ${campaign.id}`);
-      continue;
     }
   }
 }
@@ -1329,4 +1339,37 @@ export async function checkIfProfileIsInRobinson(profile: ProfileToAdd) {
 
     return false;
   }
+}
+
+export async function getRecentProfileIds(user: User) {
+  const daysAgo = subDays(new Date(), user.bufferDays || 10);
+  const BATCH_SIZE = 10000;
+  let recentProfileIds: string[] = [];
+  let skip = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const recentProfiles = await prisma.profile.findMany({
+      where: {
+        letter_sent: true,
+        letter_sent_at: {
+          gte: daysAgo,
+        },
+      },
+      select: {
+        id: true,
+      },
+      take: BATCH_SIZE,
+      skip: skip,
+    });
+
+    if (recentProfiles.length < BATCH_SIZE) {
+      hasMore = false;
+    }
+
+    recentProfileIds = recentProfileIds.concat(recentProfiles.map(profile => profile.id));
+    skip += BATCH_SIZE;
+  }
+
+  return recentProfileIds;
 }

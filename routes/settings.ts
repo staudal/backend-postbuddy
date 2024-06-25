@@ -5,7 +5,7 @@ import { InternalServerError, MissingRequiredParametersError } from '../errors';
 const router = Router();
 
 router.put('/', async (req, res) => {
-  const { user_id, firstName, lastName, company, address, zip, city, country } = req.body;
+  const { user_id, firstName, lastName, company, address, zip, city, country, bufferDays } = req.body;
   if (!user_id) return MissingRequiredParametersError;
 
   await prisma.user.update({
@@ -18,6 +18,7 @@ router.put('/', async (req, res) => {
       zip_code: zip,
       city,
       country,
+      bufferDays,
     },
   });
 

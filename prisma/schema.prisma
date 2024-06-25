@@ -23,6 +23,7 @@ model User {
   access_token String?       @unique
   role         String        @default("user")
   demo         Boolean       @default(false)
+  bufferDays   Int           @default(0)
   campaigns    Campaign[]
   designs      Design[]
   integrations Integration[]
@@ -154,16 +155,16 @@ model Order {
   email          String
   address        String
   zip_code       String
-  profiles       OrderProfile[]
   user           User           @relation(fields: [user_id], references: [id])
+  profiles       OrderProfile[]
 
   @@map("orders")
 }
 
 model OrderProfile {
   order_id   String  @map("order_id")
-  order      Order   @relation(fields: [order_id], references: [id], onDelete: Cascade)
   profile_id String  @map("profile_id")
+  order      Order   @relation(fields: [order_id], references: [id])
   profile    Profile @relation(fields: [profile_id], references: [id])
 
   @@id([order_id, profile_id])
