@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { logtail, prisma } from '../app';
-import { CampaignNotFoundError, DesignNotFoundError, ErrorWithStatusCode, FailedToBillUserError, FailedToCreateCampaignError, FailedToGeneratePdfError, FailedToScheduleCampaignError, FailedToSendPdfToPrintPartnerError, InsufficientRightsError, MissingAddressError, MissingRequiredParametersError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
+import { CampaignNotFoundError, DesignNotFoundError, ErrorWithStatusCode, FailedToBillUserError, FailedToCreateCampaignError, FailedToGeneratePdfError, FailedToScheduleCampaignError, FailedToSendPdfToPrintPartnerError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
 import { billUserForLettersSent, generateCsvAndSendToPrintPartner, generatePdf, generateTestDesign, sendLettersForNonDemoUser, sendPdfToPrintPartner } from '../functions';
 import Client from "ssh2-sftp-client";
 import { Campaign, Profile } from '@prisma/client';
@@ -84,7 +84,7 @@ router.get('/', async (req, res) => {
     return res.json(campaignData);
   } catch (error: any) {
     logtail.error(`Failed to fetch campaigns for user ${user_id}: ${error.message}`);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    return res.status(500).json({ InternalServerError });
   }
 });
 

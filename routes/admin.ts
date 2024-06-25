@@ -72,7 +72,7 @@ router.post('/users', async (req, res) => {
     },
   });
 
-  return res.status(201).json({ success: 'User created successfully' });
+  return res.status(201).json({ success: 'Bruger oprettet' });
 })
 
 router.put(`/users/:id`, async (req, res) => {
@@ -114,7 +114,7 @@ router.put(`/users/:id`, async (req, res) => {
     },
   });
 
-  return res.status(200).json({ success: 'User updated successfully' });
+  return res.status(200).json({ success: 'Bruger opdateret' });
 })
 
 router.post('/impersonate', async (req, res) => {
@@ -132,7 +132,7 @@ router.post('/impersonate', async (req, res) => {
     { expiresIn: '24h' }
   );
 
-  res.status(200).json({ success: 'Token created successfully', token });
+  res.status(200).json({ success: 'Du er nu logget ind', token });
 });
 
 

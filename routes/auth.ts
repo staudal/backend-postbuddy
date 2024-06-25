@@ -66,7 +66,7 @@ router.post('/signup', async (req, res) => {
   })();
 
   return res.status(201).json({
-    success: 'User created successfully',
+    success: 'Bruger oprettet',
     token,
   });
 })
@@ -99,7 +99,7 @@ router.post('/signin', async (req, res) => {
     { expiresIn: '24h' } // Expires in 24 hours
   );
 
-  return res.status(200).json({ success: 'User signed in successfully', token });
+  return res.status(200).json({ success: 'Du er nu logget ind', token });
 })
 
 router.post('/refresh-token', async (req, res) => {
