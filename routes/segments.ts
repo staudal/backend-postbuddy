@@ -270,28 +270,34 @@ router.post('/csv', (req, res) => {
       const wrongCountries = rows.filter((row) => row.country !== "denmark" && row.country !== "danmark" && row.country !== "sweden" && row.country !== "sverige" && row.country !== "germany" && row.country !== "tyskland");
       rows = rows.filter((row) => row.country === "denmark" || row.country === "danmark" || row.country === "sweden" || row.country === "sverige" || row.country === "germany" || row.country === "tyskland");
 
-      // Check if two profiles have the same email
-      const duplicateEmails = rows.filter(
-        (profile, index, self) =>
-          index !== self.findIndex((t) => t.email === profile.email)
-      );
-      if (duplicateEmails.length > 0) {
-        return res.status(400).json({ error: `Segmentet indeholder to eller flere profiler med samme email - blandt andet emailen: ${duplicateEmails[0].email}` });
-      }
+      // Filter out duplicate emails
+      const emailSet = new Set();
+      rows = rows.filter((profile) => {
+        if (emailSet.has(profile.email)) {
+          return false;
+        } else {
+          emailSet.add(profile.email);
+          return true;
+        }
+      });
 
-      // Check if two profiles have the same address, zip, and first_name + last_name
-      const duplicateProfiles = rows.filter(
-        (profile, index, self) =>
-          index !== self.findIndex((t) =>
-            t.address === profile.address &&
-            t.zip === profile.zip &&
-            t.first_name === profile.first_name &&
-            t.last_name === profile.last_name
-          )
-      );
-      if (duplicateProfiles.length > 0) {
-        return res.status(400).json({ error: `Segmentet indeholder to eller flere profiler med samme informationer - blandt andet: ${duplicateProfiles[0].first_name} ${duplicateProfiles[0].last_name}` });
-      }
+      // Filter out duplicate address + zip + first name + last name
+      const uniqueProfilesSet = new Set();
+      rows = rows.filter((profile) => {
+        const uniqueProfileKey = JSON.stringify({
+          address: profile.address,
+          zip: profile.zip,
+          first_name: profile.first_name,
+          last_name: profile.last_name,
+        });
+
+        if (uniqueProfilesSet.has(uniqueProfileKey)) {
+          return false;
+        } else {
+          uniqueProfilesSet.add(uniqueProfileKey);
+          return true;
+        }
+      });
 
       const newSegment = await prisma.segment.create({
         data: {
@@ -355,6 +361,7 @@ router.post('/csv', (req, res) => {
     });
   });
 });
+
 
 router.post('/klaviyo', async (req, res) => {
   const { user_id } = req.body;
