@@ -276,7 +276,7 @@ router.post('/csv', (req, res) => {
           index !== self.findIndex((t) => t.email === profile.email)
       );
       if (duplicateEmails.length > 0) {
-        return res.status(400).json({ DuplicateEmailSegmentError });
+        return res.status(400).json({ error: `Segmentet indeholder to eller flere profiler med samme email - blandt andet emailen: ${duplicateEmails[0].email}` });
       }
 
       // Check if two profiles have the same address, zip, and first_name + last_name
@@ -290,7 +290,7 @@ router.post('/csv', (req, res) => {
           )
       );
       if (duplicateProfiles.length > 0) {
-        return res.status(400).json({ DuplicateProfileSegmentError });
+        return res.status(400).json({ error: `Segmentet indeholder to eller flere profiler med samme informationer - blandt andet: ${duplicateProfiles[0].first_name} ${duplicateProfiles[0].last_name}` });
       }
 
       const newSegment = await prisma.segment.create({
