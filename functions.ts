@@ -1231,45 +1231,61 @@ export async function getKlaviyoSegmentProfilesBySegmentId(
   let missingFields: { [key: string]: number } = {};
   let nextUrl: string | null = url;
 
-  while (nextUrl) {
-    const response = await fetch(nextUrl, options);
-    const data: any = await response.json();
+  try {
+    while (nextUrl) {
+      const response = await fetch(nextUrl, options);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-    if (data.data) {
-      data.data.forEach((profile: any) => {
-        const { first_name, last_name, email, location } = profile.attributes;
-        const { address1, city, zip, country } = location || {};
+      const data: any = await response.json();
 
-        if (first_name && last_name && email && address1 && city && zip && country && (country.toLowerCase() === "denmark" || country.toLowerCase() === "danmark" || country.toLowerCase() === "sweden" || country.toLowerCase() === "sverige" || country.toLowerCase() === "germany" || country.toLowerCase() === "tyskland")) {
-          allProfiles.push(profile);
-        } else {
-          if (!first_name) missingFields['first_name'] = (missingFields['first_name'] || 0) + 1;
-          if (!last_name) missingFields['last_name'] = (missingFields['last_name'] || 0) + 1;
-          if (!address1) missingFields['address1'] = (missingFields['address1'] || 0) + 1;
-          if (!city) missingFields['city'] = (missingFields['city'] || 0) + 1;
-          if (!zip) missingFields['zip'] = (missingFields['zip'] || 0) + 1;
-          if (!country) missingFields['country'] = (missingFields['country'] || 0) + 1;
-          // Skip profiles where country is not Denmark, Danmark, Sweden, Sverige, Germany or Tyskland
-          if (country && country !== "denmark" && country !== "danmark" && country !== "sweden" && country !== "sverige" && country !== "germany" && country !== "tyskland") missingFields['country'] = (missingFields['country'] || 0) + 1;
-          skippedProfiles.push(profile);
-        }
-      });
+      if (data.data) {
+        data.data.forEach((profile: any) => {
+          const { first_name, last_name, email, location } = profile.attributes;
+          const { address1, city, zip, country } = location || {};
+
+          if (first_name && last_name && email && address1 && city && zip && country &&
+            (country.toLowerCase() === "denmark" || country.toLowerCase() === "danmark" ||
+              country.toLowerCase() === "sweden" || country.toLowerCase() === "sverige" ||
+              country.toLowerCase() === "germany" || country.toLowerCase() === "tyskland")) {
+            allProfiles.push(profile);
+          } else {
+            if (!first_name) missingFields['first_name'] = (missingFields['first_name'] || 0) + 1;
+            if (!last_name) missingFields['last_name'] = (missingFields['last_name'] || 0) + 1;
+            if (!address1) missingFields['address1'] = (missingFields['address1'] || 0) + 1;
+            if (!city) missingFields['city'] = (missingFields['city'] || 0) + 1;
+            if (!zip) missingFields['zip'] = (missingFields['zip'] || 0) + 1;
+            if (!country) missingFields['country'] = (missingFields['country'] || 0) + 1;
+            // Skip profiles where country is not Denmark, Danmark, Sweden, Sverige, Germany or Tyskland
+            if (country && !["denmark", "danmark", "sweden", "sverige", "germany", "tyskland"].includes(country.toLowerCase())) {
+              missingFields['country'] = (missingFields['country'] || 0) + 1;
+            }
+            skippedProfiles.push(profile);
+          }
+        });
+      }
+
+      nextUrl = data.links?.next || null;
+
+      // Respect the rate limit
+      await new Promise((resolve) => setTimeout(resolve, 1000 / 75));
     }
 
-    nextUrl = data.links.next;
+    let reason = '';
+    for (const field in missingFields) {
+      reason += `${field} (x${missingFields[field]}), `;
+    }
+    reason = reason.slice(0, -2); // remove trailing comma and space
 
-    // Respect the rate limit
-    await new Promise((resolve) => setTimeout(resolve, 1000 / 75));
+    return { validProfiles: allProfiles, skippedProfiles, reason };
+
+  } catch (error: any) {
+    console.error("Error fetching Klaviyo Segment Profiles: ", error);
+    return { validProfiles: [], skippedProfiles: [], reason: `Failed to fetch profiles: ${error.message}` };  // Ensure that a valid return structure is maintained even in case of errors
   }
-
-  let reason = '';
-  for (const field in missingFields) {
-    reason += `${field} (x${missingFields[field]}), `;
-  }
-  reason = reason.slice(0, -2); // remove trailing comma and space
-
-  return { validProfiles: allProfiles, skippedProfiles, reason };
 }
+
 
 export function detectDelimiter(line: string): string {
   const delimiters = [",", ";", "\t"];
