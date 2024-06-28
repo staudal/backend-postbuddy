@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { prisma } from '../app';
+import { logtail, prisma } from '../app';
 import { DuplicateEmailSegmentError, DuplicateProfileSegmentError, IntegrationNotFoundError, InternalServerError, MissingRequiredParametersError, SegmentNotFoundError, UserNotFoundError } from '../errors';
 import { Profile } from '@prisma/client';
 import { detectDelimiter, generateUniqueFiveDigitId, getKlaviyoSegmentProfilesBySegmentId, returnProfilesInRobinson, splitCSVLine } from '../functions';
@@ -364,121 +364,121 @@ router.post('/csv', (req, res) => {
 
 
 router.post('/klaviyo', async (req, res) => {
-  const { user_id } = req.body;
-  if (!user_id) return res.status(400).json({ error: 'MissingRequiredParametersError' });
+  try {
+    const { user_id } = req.body;
+    if (!user_id) return res.status(400).json({ error: 'MissingRequiredParametersError' });
 
-  const selected_segment = req.body.selected_segment;
+    const selected_segment = req.body.selected_segment;
 
-  if (!selected_segment) return res.status(400).json({ error: 'MissingRequiredParametersError' });
+    if (!selected_segment) return res.status(400).json({ error: 'MissingRequiredParametersError' });
 
-  const user = await prisma.user.findUnique({
-    where: { id: user_id },
-  });
-  if (!user) return res.status(404).json({ error: 'UserNotFoundError' });
+    const user = await prisma.user.findUnique({
+      where: { id: user_id },
+    });
+    if (!user) return res.status(404).json({ error: 'UserNotFoundError' });
 
-  const integration = await prisma.integration.findFirst({
-    where: {
-      user_id: user.id,
-      type: "klaviyo",
-    },
-  });
-  if (!integration || !integration.klaviyo_api_key) return res.status(400).json({ error: 'IntegrationNotFoundError' });
+    const integration = await prisma.integration.findFirst({
+      where: {
+        user_id: user.id,
+        type: "klaviyo",
+      },
+    });
+    if (!integration || !integration.klaviyo_api_key) return res.status(400).json({ error: 'IntegrationNotFoundError' });
 
-  const klaviyoSegmentProfiles = await getKlaviyoSegmentProfilesBySegmentId(
-    selected_segment.id,
-    integration.klaviyo_api_key
-  );
+    const klaviyoSegmentProfiles = await getKlaviyoSegmentProfilesBySegmentId(
+      selected_segment.id,
+      integration.klaviyo_api_key
+    );
 
-  // Filter out duplicate emails
-  const emailSet = new Set();
-  const uniqueProfilesByEmail = klaviyoSegmentProfiles.validProfiles.filter(profile => {
-    if (emailSet.has(profile.attributes.email)) {
-      return false;
-    } else {
-      emailSet.add(profile.attributes.email);
-      return true;
-    }
-  });
-
-  // Filter out duplicate address + zip + first name + last name
-  const uniqueProfilesSet = new Set();
-  const uniqueProfiles = uniqueProfilesByEmail.filter(profile => {
-    const uniqueProfileKey = JSON.stringify({
-      address: profile.attributes.location.address1,
-      zip: profile.attributes.location.zip,
-      first_name: profile.attributes.first_name,
-      last_name: profile.attributes.last_name,
+    // Filter out duplicate emails
+    const emailSet = new Set();
+    const uniqueProfilesByEmail = klaviyoSegmentProfiles.validProfiles.filter(profile => {
+      if (emailSet.has(profile.attributes.email)) {
+        return false;
+      } else {
+        emailSet.add(profile.attributes.email);
+        return true;
+      }
     });
 
-    if (uniqueProfilesSet.has(uniqueProfileKey)) {
-      return false;
-    } else {
-      uniqueProfilesSet.add(uniqueProfileKey);
-      return true;
-    }
-  });
+    // Filter out duplicate address + zip + first name + last name
+    const uniqueProfilesSet = new Set();
+    const uniqueProfiles = uniqueProfilesByEmail.filter(profile => {
+      const uniqueProfileKey = JSON.stringify({
+        address: profile.attributes.location.address1,
+        zip: profile.attributes.location.zip,
+        first_name: profile.attributes.first_name,
+        last_name: profile.attributes.last_name,
+      });
 
-  const newSegment = await prisma.segment.create({
-    data: {
-      name: selected_segment.attributes.name,
-      type: "klaviyo",
-      user_id: user.id,
-      klaviyo_id: selected_segment.id,
-      demo: user.demo,
-    },
-  });
+      if (uniqueProfilesSet.has(uniqueProfileKey)) {
+        return false;
+      } else {
+        uniqueProfilesSet.add(uniqueProfileKey);
+        return true;
+      }
+    });
 
-  let profilesToAdd = uniqueProfiles.map((profile) => ({
-    id: profile.id,
-    first_name: profile.attributes.first_name,
-    last_name: profile.attributes.last_name,
-    email: profile.attributes.email,
-    address: profile.attributes.location.address1,
-    city: profile.attributes.location.city,
-    zip_code: profile.attributes.location.zip,
-    country: profile.attributes.location.country,
-    segment_id: newSegment.id,
-    in_robinson: false,
-    custom_variable: profile.attributes.properties.custom_variable || null,
-  }));
+    const newSegment = await prisma.segment.create({
+      data: {
+        name: selected_segment.attributes.name,
+        type: "klaviyo",
+        user_id: user.id,
+        klaviyo_id: selected_segment.id,
+        demo: user.demo,
+      },
+    });
 
-  const profilesInRobinson = await returnProfilesInRobinson(profilesToAdd);
-
-  // Filter the profiles in robinson into the profilesToAdd array and set in_robinson to true
-  profilesToAdd.forEach((profile) => {
-    if (profilesInRobinson.some((robinsonProfile) => robinsonProfile === profile)) {
-      profile.in_robinson = true;
-    }
-  });
-
-  // Create the new profiles
-  await prisma.profile.createMany({
-    data: profilesToAdd.map((profile) => ({
-      klaviyo_id: profile.id,
-      first_name: profile.first_name.toLowerCase(),
-      last_name: profile.last_name.toLowerCase(),
-      email: profile.email.toLowerCase(),
-      address: profile.address.toLowerCase(),
-      city: profile.city.toLowerCase(),
-      zip_code: profile.zip_code,
-      country: profile.country.toLowerCase(),
+    let profilesToAdd = uniqueProfiles.map((profile) => ({
+      id: profile.id,
+      first_name: profile.attributes.first_name,
+      last_name: profile.attributes.last_name,
+      email: profile.attributes.email,
+      address: profile.attributes.location.address1,
+      city: profile.attributes.location.city,
+      zip_code: profile.attributes.location.zip,
+      country: profile.attributes.location.country,
       segment_id: newSegment.id,
-      in_robinson: profile.in_robinson,
-      custom_variable: profile.custom_variable || null,
-      demo: newSegment.demo,
-    })),
-  });
+      in_robinson: false,
+      custom_variable: profile.attributes.properties.custom_variable || null,
+    }));
 
-  await prisma.segment.findUnique({
-    where: { id: newSegment.id },
-    include: { profiles: true, campaign: true },
-  });
+    const profilesInRobinson = await returnProfilesInRobinson(profilesToAdd);
 
-  res.status(200).json({
-    success: 'Segment created successfully',
-    skipped_profiles: klaviyoSegmentProfiles.skippedProfiles,
-    reason: klaviyoSegmentProfiles.reason
-  });
+    // Filter the profiles in robinson into the profilesToAdd array and set in_robinson to true
+    profilesToAdd.forEach((profile) => {
+      if (profilesInRobinson.some((robinsonProfile) => robinsonProfile === profile)) {
+        profile.in_robinson = true;
+      }
+    });
+
+    // Create the new profiles
+    await prisma.profile.createMany({
+      data: profilesToAdd.map((profile) => ({
+        klaviyo_id: profile.id,
+        first_name: profile.first_name.toLowerCase(),
+        last_name: profile.last_name.toLowerCase(),
+        email: profile.email.toLowerCase(),
+        address: profile.address.toLowerCase(),
+        city: profile.city.toLowerCase(),
+        zip_code: profile.zip_code,
+        country: profile.country.toLowerCase(),
+        segment_id: newSegment.id,
+        in_robinson: profile.in_robinson,
+        custom_variable: profile.custom_variable || null,
+        demo: newSegment.demo,
+      })),
+    });
+
+    return res.status(200).json({
+      success: 'Segment created successfully',
+      skipped_profiles: klaviyoSegmentProfiles.skippedProfiles,
+      reason: klaviyoSegmentProfiles.reason
+    });
+  } catch (error: any) {
+    logtail.error(error);
+    return res.status(500).json({ error: InternalServerError });
+  }
 });
 
 
