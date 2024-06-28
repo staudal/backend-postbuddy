@@ -1237,7 +1237,6 @@ export async function getKlaviyoSegmentProfilesBySegmentId(
 
     if (data.data) {
       data.data.forEach((profile: any) => {
-        console.log(profile.attributes)
         const { first_name, last_name, email, location } = profile.attributes;
         const { address1, city, zip, country } = location || {};
 
@@ -1271,7 +1270,6 @@ export async function getKlaviyoSegmentProfilesBySegmentId(
 
   return { validProfiles: allProfiles, skippedProfiles, reason };
 }
-
 
 export function detectDelimiter(line: string): string {
   const delimiters = [",", ";", "\t"];
