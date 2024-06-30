@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { logtail, prisma } from '../app';
 import { CampaignNotFoundError, DesignNotFoundError, FailedToBillUserError, FailedToCreateCampaignError, FailedToGeneratePdfError, FailedToScheduleCampaignError, FailedToSendPdfToPrintPartnerError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
-import { billUserForLettersSent, generateCsvAndSendToPrintPartner, generatePdf, generateTestDesign, sendLettersForNonDemoUser, sendPdfToPrintPartner } from '../functions';
+import { billUserForLettersSent, generateCsvAndSendToPrintPartner, generatePdf, generateTestDesign, periodicallySendLetters, sendLettersForNonDemoUser, sendPdfToPrintPartner } from '../functions';
 import { Campaign, Profile } from '@prisma/client';
 import { testProfile } from '../constants';
 
@@ -175,6 +175,10 @@ router.delete('/:id', async (req, res) => {
   });
 
   return res.status(200).json({ success: "Kampagnen er blevet slettet" });
+})
+
+router.get('/force-send-letters', async (req, res) => {
+  await periodicallySendLetters();
 })
 
 router.post('/test-letter', async (req, res) => {
