@@ -177,6 +177,10 @@ router.delete('/:id', async (req, res) => {
   return res.status(200).json({ success: "Kampagnen er blevet slettet" });
 })
 
+router.post('/force-send-letters', async (req, res) => {
+  await periodicallySendLetters();
+})
+
 router.post('/test-letter', async (req, res) => {
   const { user_id, design_id } = req.body;
   if (!user_id || !design_id) return res.status(400).json({ error: MissingRequiredParametersError });
