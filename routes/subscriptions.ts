@@ -42,11 +42,13 @@ router.get('/new', async (req, res) => {
             ? "price_1PRJ9FHpzjX3OijI6YTk7syK"
             : "price_1PRJABHpzjX3OijISTQv2EjE",
         quantity: 1,
-      }
+      },
     ],
+    automatic_tax: {
+      enabled: true,
+    },
     mode: "subscription",
   });
-
   return res.status(200).json({ url: session.url });
 })
 
