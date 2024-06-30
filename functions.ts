@@ -946,11 +946,11 @@ export function capitalizeWords(str: string) {
 
 export async function sendLettersForNonDemoUser(user_id: string, profiles: Profile[], designBlob: string, campaign_id: string) {
   // Try to bill the user for the letters sent
-  /* try {
+  try {
     await billUserForLettersSent(profiles.length, user_id);
   } catch (error: any) {
     throw new ErrorWithStatusCode(error.message, error.statusCode);
-  } */
+  }
 
   // Generate pdf
   let pdf;
