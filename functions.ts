@@ -1,4 +1,4 @@
-import { PrismaClient, Profile, User } from '@prisma/client'
+import { Campaign, PrismaClient, Profile, User } from '@prisma/client'
 import { KlaviyoSegmentProfile, Order, ProfileToAdd } from './types'
 import { Order as PrismaOrder } from '@prisma/client'
 import Stripe from 'stripe';
@@ -1176,9 +1176,8 @@ export async function periodicallySendLetters() {
         }
       })
 
-      const recentProfileIds = await getRecentProfileIds(user);
-
       for (const campaign of campaigns) {
+        const recentProfileIds = await getRecentProfileIds(user, campaign);
         const segment = await prisma.segment.findFirst({
           where: {
             campaign: {
@@ -1403,7 +1402,7 @@ export async function checkIfProfileIsInRobinson(profile: ProfileToAdd) {
   }
 }
 
-export async function getRecentProfileIds(user: User) {
+export async function getRecentProfileIds(user: User, campaign: Campaign) {
   const daysAgo = subDays(new Date(), user.buffer_days || 10);
   const BATCH_SIZE = 10000;
   let recentProfileIds: string[] = [];
@@ -1417,6 +1416,7 @@ export async function getRecentProfileIds(user: User) {
         letter_sent_at: {
           gte: daysAgo,
         },
+        segment_id: campaign.segment_id,
       },
       select: {
         id: true,
