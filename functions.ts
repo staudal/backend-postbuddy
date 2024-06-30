@@ -870,6 +870,7 @@ export async function generatePdf(profiles: Profile[], designBlob: string) {
         const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
         copiedPages.forEach((page) => mergedPdf.addPage(page));
         logtail.info(`Generated pdf #${profilesGenerated + 1} out of ${profiles.length}`);
+        profilesGenerated++;
       }
     });
     const pdfArray = await mergedPdf.save();
