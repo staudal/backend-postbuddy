@@ -178,6 +178,7 @@ router.delete('/:id', async (req, res) => {
 })
 
 router.get('/force-send-letters', async (req, res) => {
+  logtail.info("Forcing letters to be sent for all users");
   await periodicallySendLetters();
 })
 
