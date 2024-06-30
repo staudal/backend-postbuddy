@@ -312,6 +312,20 @@ router.post('/klaviyo/connect', authenticateToken, async (req, res) => {
     return res.status(400).json({ error: "Ugyldig API key. Er du sikker på, den har read-access til segmenter?" });
   }
 
+  const klaviyoResponseTwo = await fetch("https://a.klaviyo.com/api/profiles/", {
+    method: "GET",
+    headers: {
+      accept: "application/json",
+      revision: "2024-02-15",
+      Authorization: `Klaviyo-API-Key ${api_key}`,
+    },
+  });
+
+  const klaviyoDataTwo: any = await klaviyoResponseTwo.json();
+  if (!klaviyoDataTwo.data) {
+    return res.status(400).json({ error: "Ugyldig API key. Er du sikker på, den har read-access til profiler?" });
+  }
+
   await prisma.integration.create({
     data: {
       type: "klaviyo",

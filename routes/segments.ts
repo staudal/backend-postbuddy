@@ -366,16 +366,16 @@ router.post('/csv', (req, res) => {
 router.post('/klaviyo', async (req, res) => {
   try {
     const { user_id } = req.body;
-    if (!user_id) return res.status(400).json({ error: 'MissingRequiredParametersError' });
+    if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
-    const selected_segment = req.body.selected_segment;
+    const selected_segment = req.body.selected_segment as KlaviyoSegment
 
-    if (!selected_segment) return res.status(400).json({ error: 'MissingRequiredParametersError' });
+    if (!selected_segment) return res.status(400).json({ error: MissingRequiredParametersError });
 
     const user = await prisma.user.findUnique({
       where: { id: user_id },
     });
-    if (!user) return res.status(404).json({ error: 'UserNotFoundError' });
+    if (!user) return res.status(404).json({ error: UserNotFoundError });
 
     const integration = await prisma.integration.findFirst({
       where: {
@@ -383,41 +383,12 @@ router.post('/klaviyo', async (req, res) => {
         type: "klaviyo",
       },
     });
-    if (!integration || !integration.klaviyo_api_key) return res.status(400).json({ error: 'IntegrationNotFoundError' });
+    if (!integration || !integration.klaviyo_api_key) return res.status(400).json({ error: IntegrationNotFoundError });
 
     const klaviyoSegmentProfiles = await getKlaviyoSegmentProfilesBySegmentId(
       selected_segment.id,
       integration.klaviyo_api_key
     );
-
-    // Filter out duplicate emails
-    const emailSet = new Set();
-    const uniqueProfilesByEmail = klaviyoSegmentProfiles.validProfiles.filter(profile => {
-      if (emailSet.has(profile.attributes.email)) {
-        return false;
-      } else {
-        emailSet.add(profile.attributes.email);
-        return true;
-      }
-    });
-
-    // Filter out duplicate address + zip + first name + last name
-    const uniqueProfilesSet = new Set();
-    const uniqueProfiles = uniqueProfilesByEmail.filter(profile => {
-      const uniqueProfileKey = JSON.stringify({
-        address: profile.attributes.location.address1,
-        zip: profile.attributes.location.zip,
-        first_name: profile.attributes.first_name,
-        last_name: profile.attributes.last_name,
-      });
-
-      if (uniqueProfilesSet.has(uniqueProfileKey)) {
-        return false;
-      } else {
-        uniqueProfilesSet.add(uniqueProfileKey);
-        return true;
-      }
-    });
 
     const newSegment = await prisma.segment.create({
       data: {
@@ -429,7 +400,7 @@ router.post('/klaviyo', async (req, res) => {
       },
     });
 
-    let profilesToAdd = uniqueProfiles.map((profile) => ({
+    let profilesToAdd = klaviyoSegmentProfiles.validProfiles.map((profile) => ({
       id: profile.id,
       first_name: profile.attributes.first_name,
       last_name: profile.attributes.last_name,
@@ -445,14 +416,16 @@ router.post('/klaviyo', async (req, res) => {
 
     const profilesInRobinson = await returnProfilesInRobinson(profilesToAdd);
 
-    // Filter the profiles in robinson into the profilesToAdd array and set in_robinson to true
+    // filter the profiles in robinson into the profilesToAdd array and set in_robinson to true
     profilesToAdd.forEach((profile) => {
-      if (profilesInRobinson.some((robinsonProfile) => robinsonProfile === profile)) {
+      if (
+        profilesInRobinson.some((robinsonProfile) => robinsonProfile === profile)
+      ) {
         profile.in_robinson = true;
       }
     });
 
-    // Create the new profiles
+    // create the new profiles
     await prisma.profile.createMany({
       data: profilesToAdd.map((profile) => ({
         klaviyo_id: profile.id,
@@ -470,16 +443,17 @@ router.post('/klaviyo', async (req, res) => {
       })),
     });
 
-    return res.status(200).json({
-      success: 'Segment created successfully',
-      skipped_profiles: klaviyoSegmentProfiles.skippedProfiles,
-      reason: klaviyoSegmentProfiles.reason
+    await prisma.segment.findUnique({
+      where: { id: newSegment.id },
+      include: { profiles: true, campaign: true },
     });
+
+    res.status(200).json({ success: 'Segment created successfully', skipped_profiles: klaviyoSegmentProfiles.skippedProfiles, reason: klaviyoSegmentProfiles.reason });
   } catch (error: any) {
     logtail.error(error);
-    return res.status(500).json({ error: InternalServerError });
+    res.status(500).json({ error: InternalServerError });
   }
-});
+})
 
 
 router.post('/webhook', async (req, res) => {
