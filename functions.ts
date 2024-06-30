@@ -949,6 +949,7 @@ export async function sendLettersForNonDemoUser(user_id: string, profiles: Profi
   let pdf;
   try {
     pdf = await generatePdf(profiles, designBlob);
+    logtail.info(`Successfully generated a pdf for user ${user_id} and campaign ${campaign_id}`);
   } catch (error: any) {
     logtail.error(`An error occured while trying to generate a pdf for user ${user_id} and campaign ${campaign_id}`);
     throw new ErrorWithStatusCode(FailedToGeneratePdfError, 500);
@@ -960,6 +961,7 @@ export async function sendLettersForNonDemoUser(user_id: string, profiles: Profi
 
   try {
     await sendPdfToPrintPartner(pdf, user_id, dateString);
+    logtail.info(`Successfully sent a pdf to the print partner for user ${user_id} and campaign ${campaign_id}`);
   } catch (error: any) {
     logtail.error(`An error occured while trying to send a pdf to the print partner for user ${user_id} and campaign ${campaign_id}`);
     throw new ErrorWithStatusCode(FailedToSendPdfToPrintPartnerError, 500);
@@ -967,6 +969,7 @@ export async function sendLettersForNonDemoUser(user_id: string, profiles: Profi
 
   try {
     await generateCsvAndSendToPrintPartner(profiles, user_id, dateString);
+    logtail.info(`Successfully generated a csv and sent it to the print partner for user ${user_id} and campaign ${campaign_id}`);
   } catch (error: any) {
     logtail.error(`An error occured while trying to generate a csv and send it to the print partner for user ${user_id} and campaign ${campaign_id}`);
     throw new ErrorWithStatusCode(FailedToSendPdfToPrintPartnerError, 500);
@@ -985,6 +988,7 @@ export async function sendLettersForNonDemoUser(user_id: string, profiles: Profi
         letter_sent_at: new Date(),
       },
     });
+    logtail.info(`Successfully updated profiles to sent for user ${user_id} and campaign ${campaign_id}`);
   } catch (error: any) {
     logtail.error(`An error occured while trying to update profiles to sent for user ${user_id} and campaign ${campaign_id}`);
     throw new ErrorWithStatusCode(FailedToUpdateProfilesToSentError, 500);
@@ -1204,6 +1208,7 @@ export async function periodicallySendLetters() {
         try {
           if (!segment.demo) {
             await sendLettersForNonDemoUser(campaign.user_id, updatedProfiles, campaign.design.blob, campaign.id)
+            logtail.info(`Letters sent for user ${campaign.user_id} and campaign ${campaign.id}`);
           } else {
             await sendLettersForDemoUser(updatedProfiles, campaign.id, campaign.user_id)
           }
