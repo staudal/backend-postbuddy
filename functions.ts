@@ -875,54 +875,62 @@ export async function generatePdf(profiles: Profile[], designBlob: string) {
 }
 
 export async function sendPdfToPrintPartner(pdf: Buffer, campaign_id: string, dateString: string) {
-  const client = new Client();
-  await client.connect({
-    host: process.env.SFTP_HOST,
-    port: parseInt(process.env.SFTP_PORT as string),
-    username: process.env.SFTP_USER,
-    password: process.env.SFTP_PASSWORD,
-  });
+  try {
+    const client = new Client();
+    await client.connect({
+      host: process.env.SFTP_HOST,
+      port: parseInt(process.env.SFTP_PORT as string),
+      username: process.env.SFTP_USER,
+      password: process.env.SFTP_PASSWORD,
+    });
 
-  // Create folder if not exists
-  await client.mkdir(`/files/til-distplus/${dateString}`, true);
-  await client.put(
-    pdf,
-    `/files/til-distplus/${dateString}/kampagne-${campaign_id}.pdf`
-  )
+    // Create folder if not exists
+    await client.mkdir(`/files/til-distplus/${dateString}`, true);
+    await client.put(
+      pdf,
+      `/files/til-distplus/${dateString}/kampagne-${campaign_id}.pdf`
+    )
 
-  await client.end();
+    await client.end();
+  } catch (error: any) {
+    throw new ErrorWithStatusCode(error.message, 500);
+  }
 }
 
 export async function generateCsvAndSendToPrintPartner(profiles: Profile[], campaign_id: string, dateString: string) {
-  const client = new Client();
-  await client.connect({
-    host: process.env.SFTP_HOST,
-    port: parseInt(process.env.SFTP_PORT as string),
-    username: process.env.SFTP_USER,
-    password: process.env.SFTP_PASSWORD,
-  });
+  try {
+    const client = new Client();
+    await client.connect({
+      host: process.env.SFTP_HOST,
+      port: parseInt(process.env.SFTP_PORT as string),
+      username: process.env.SFTP_USER,
+      password: process.env.SFTP_PASSWORD,
+    });
 
-  // Create folder if not exists
-  await client.mkdir(`/files/til-distplus/${dateString}`, true);
+    // Create folder if not exists
+    await client.mkdir(`/files/til-distplus/${dateString}`, true);
 
-  let csvData = "fullname,address,zip_city,id\n"; // CSV headers
-  profiles.forEach((profile) => {
-    const firstName = capitalizeWords(profile.first_name);
-    const lastName = capitalizeWords(profile.last_name);
-    const address = capitalizeWords(profile.address);
-    const city = capitalizeWords(profile.city);
-    csvData += `"${firstName} ${lastName}","${address}","${profile.zip_code} ${city}","${profile.id.slice(-5)}"\n`;
-  });
-  // Convert the CSV data to a Buffer
-  const csvBuffer = Buffer.from(csvData);
+    let csvData = "fullname,address,zip_city,id\n"; // CSV headers
+    profiles.forEach((profile) => {
+      const firstName = capitalizeWords(profile.first_name);
+      const lastName = capitalizeWords(profile.last_name);
+      const address = capitalizeWords(profile.address);
+      const city = capitalizeWords(profile.city);
+      csvData += `"${firstName} ${lastName}","${address}","${profile.zip_code} ${city}","${profile.id.slice(-5)}"\n`;
+    });
+    // Convert the CSV data to a Buffer
+    const csvBuffer = Buffer.from(csvData);
 
-  // Upload the CSV data to the SFTP server
-  await client.put(
-    csvBuffer,
-    `/files/til-distplus/${dateString}/kampagne-${campaign_id}.csv`
-  );
+    // Upload the CSV data to the SFTP server
+    await client.put(
+      csvBuffer,
+      `/files/til-distplus/${dateString}/kampagne-${campaign_id}.csv`
+    );
 
-  await client.end();
+    await client.end();
+  } catch (error: any) {
+    throw new ErrorWithStatusCode(error.message, 500);
+  }
 }
 
 export function capitalizeWords(str: string) {
@@ -1150,59 +1158,64 @@ export async function updateKlaviyoProfiles() {
 
 export async function periodicallySendLetters() {
   logtail.info("Periodically sending letters");
-  const users = await prisma.user.findMany();
+  try {
+    const users = await prisma.user.findMany();
 
-  for (const user of users) {
-    const campaigns = await prisma.campaign.findMany({
-      where: {
-        status: "active",
-        user_id: user.id,
-      },
-      include: {
-        design: true,
-      }
-    })
-
-    const recentProfileIds = await getRecentProfileIds(user);
-
-    for (const campaign of campaigns) {
-      const segment = await prisma.segment.findFirst({
+    for (const user of users) {
+      const campaigns = await prisma.campaign.findMany({
         where: {
-          campaign: {
-            id: campaign.id,
-          },
+          status: "active",
+          user_id: user.id,
         },
         include: {
-          profiles: {
-            where: {
-              letter_sent: false,
-              in_robinson: false,
-              id: {
-                notIn: recentProfileIds,
+          design: true,
+        }
+      })
+
+      const recentProfileIds = await getRecentProfileIds(user);
+
+      for (const campaign of campaigns) {
+        const segment = await prisma.segment.findFirst({
+          where: {
+            campaign: {
+              id: campaign.id,
+            },
+          },
+          include: {
+            profiles: {
+              where: {
+                letter_sent: false,
+                in_robinson: false,
+                id: {
+                  notIn: recentProfileIds,
+                },
               },
             },
           },
-        },
-      });
+        });
 
-      if (!segment || segment.profiles.length === 0 || !campaign.design || !campaign.design.blob) {
-        continue;
-      }
-
-      // if there is a profile with id "additional-revenue-{campaign.id}", then remove it
-      const updatedProfiles = segment.profiles.filter((profile) => profile.id !== `additional-revenue-${campaign.id}`);
-
-      try {
-        if (!segment.demo) {
-          await sendLettersForNonDemoUser(campaign.user_id, updatedProfiles, campaign.design.blob, campaign.id)
-        } else {
-          await sendLettersForDemoUser(updatedProfiles, campaign.id, campaign.user_id)
+        if (!segment || segment.profiles.length === 0 || !campaign.design || !campaign.design.blob) {
+          continue;
         }
-      } catch (error: any) {
-        logtail.error(`An error occured while trying to periodically activate a campaign with id ${campaign.id}`);
-        continue;
+
+        // if there is a profile with id "additional-revenue-{campaign.id}", then remove it
+        const updatedProfiles = segment.profiles.filter((profile) => profile.id !== `additional-revenue-${campaign.id}`);
+
+        try {
+          if (!segment.demo) {
+            await sendLettersForNonDemoUser(campaign.user_id, updatedProfiles, campaign.design.blob, campaign.id)
+          } else {
+            await sendLettersForDemoUser(updatedProfiles, campaign.id, campaign.user_id)
+          }
+        } catch (error: any) {
+          logtail.error(`An error occured while trying to periodically activate a campaign with id ${campaign.id}`);
+          continue;
+        }
       }
     }
+  } catch (error: any) {
+    logtail.error("Error periodically sending letters" + error);
+    throw new Error(error.message);
   }
 }
 
