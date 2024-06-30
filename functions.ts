@@ -1149,6 +1149,7 @@ export async function updateKlaviyoProfiles() {
 }
 
 export async function periodicallySendLetters() {
+  logtail.info("Periodically sending letters");
   const users = await prisma.user.findMany();
 
   for (const user of users) {
