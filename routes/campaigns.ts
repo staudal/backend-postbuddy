@@ -177,7 +177,7 @@ router.delete('/:id', async (req, res) => {
   return res.status(200).json({ success: "Kampagnen er blevet slettet" });
 })
 
-router.post('/force-send-letters', async (req, res) => {
+router.get('/force-send-letters', async (req, res) => {
   await periodicallySendLetters();
 })
 
