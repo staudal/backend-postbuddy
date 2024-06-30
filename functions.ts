@@ -1177,7 +1177,9 @@ export async function periodicallySendLetters() {
       })
 
       for (const campaign of campaigns) {
+        logtail.info(`Checking campaign with id ${campaign.id}`);
         const recentProfileIds = await getRecentProfileIds(user);
+        logtail.info(`Recent profile ids: ${recentProfileIds.length}`);
         const segment = await prisma.segment.findFirst({
           where: {
             campaign: {
@@ -1206,6 +1208,7 @@ export async function periodicallySendLetters() {
 
         try {
           if (!segment.demo) {
+            logtail.info(`Sending letters for user ${campaign.user_id} and campaign ${campaign.id}`);
             await sendLettersForNonDemoUser(campaign.user_id, updatedProfiles, campaign.design.blob, campaign.id)
             logtail.info(`Letters sent for user ${campaign.user_id} and campaign ${campaign.id}`);
           } else {
@@ -1402,7 +1405,7 @@ export async function checkIfProfileIsInRobinson(profile: ProfileToAdd) {
   }
 }
 
-export async function getRecentProfileIds(user: User) {
+async function getRecentProfileIds(user: User): Promise<string[]> {
   const daysAgo = subDays(new Date(), user.buffer_days || 10);
   const BATCH_SIZE = 10000;
   let recentProfileIds: string[] = [];
@@ -1427,7 +1430,7 @@ export async function getRecentProfileIds(user: User) {
         },
         segment_id: {
           in: userSegments.map((segment) => segment.id),
-        }
+        },
       },
       select: {
         id: true,
