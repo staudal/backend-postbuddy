@@ -1177,7 +1177,7 @@ export async function periodicallySendLetters() {
       })
 
       for (const campaign of campaigns) {
-        const recentProfileIds = await getRecentProfileIds(user, campaign);
+        const recentProfileIds = await getRecentProfileIds(user);
         const segment = await prisma.segment.findFirst({
           where: {
             campaign: {
@@ -1402,12 +1402,21 @@ export async function checkIfProfileIsInRobinson(profile: ProfileToAdd) {
   }
 }
 
-export async function getRecentProfileIds(user: User, campaign: Campaign) {
+export async function getRecentProfileIds(user: User) {
   const daysAgo = subDays(new Date(), user.buffer_days || 10);
   const BATCH_SIZE = 10000;
   let recentProfileIds: string[] = [];
   let skip = 0;
   let hasMore = true;
+
+  const userSegments = await prisma.segment.findMany({
+    where: {
+      user_id: user.id,
+    },
+    select: {
+      id: true,
+    },
+  });
 
   while (hasMore) {
     const recentProfiles = await prisma.profile.findMany({
@@ -1416,7 +1425,9 @@ export async function getRecentProfileIds(user: User, campaign: Campaign) {
         letter_sent_at: {
           gte: daysAgo,
         },
-        segment_id: campaign.segment_id,
+        segment_id: {
+          in: userSegments.map((segment) => segment.id),
+        }
       },
       select: {
         id: true,
