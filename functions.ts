@@ -1152,6 +1152,7 @@ export async function periodicallySendLetters() {
   const users = await prisma.user.findMany();
 
   for (const user of users) {
+    logtail.info(`Checking for active campaigns for user with id ${user.id}`);
     const campaigns = await prisma.campaign.findMany({
       where: {
         status: "active",
