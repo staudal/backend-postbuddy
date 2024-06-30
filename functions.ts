@@ -849,29 +849,35 @@ export function generateIdText(engine: CreativeEngine, profile: Profile, idText:
 }
 
 export async function generatePdf(profiles: Profile[], designBlob: string) {
-  const mergedPdf = await PDFDocument.create();
-  await CreativeEngine.init(config).then(async (engine) => {
-    const scene = await engine.scene.loadFromURL(designBlob);
-    const pages = engine.scene.getPages();
-    const pageWidth = engine.block.getWidth(pages[0]);
-    const pageHeight = engine.block.getHeight(pages[0]);
-    const idText = engine.block.create("text");
-    generateIdBlock(idText, engine, pageWidth, pageHeight, pages);
-    generateBleedLines(engine, pages, pageWidth, pageHeight);
-    for (const profile of profiles) {
-      updateVariables(engine, profile);
-      generateIdText(engine, profile, idText, pages);
-      const { MimeType } = CESDK;
-      const pdfBlob = await engine.block.export(scene, MimeType.Pdf);
-      const pdfBuffer = Buffer.from(await pdfBlob.arrayBuffer());
-      const pdf = await PDFDocument.load(pdfBuffer);
-      const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-      copiedPages.forEach((page) => mergedPdf.addPage(page));
-    }
-  });
-  const pdfArray = await mergedPdf.save();
-  const pdf = Buffer.from(pdfArray);
-  return pdf;
+  let profilesGenerated = 0;
+  try {
+    const mergedPdf = await PDFDocument.create();
+    await CreativeEngine.init(config).then(async (engine) => {
+      const scene = await engine.scene.loadFromURL(designBlob);
+      const pages = engine.scene.getPages();
+      const pageWidth = engine.block.getWidth(pages[0]);
+      const pageHeight = engine.block.getHeight(pages[0]);
+      const idText = engine.block.create("text");
+      generateIdBlock(idText, engine, pageWidth, pageHeight, pages);
+      generateBleedLines(engine, pages, pageWidth, pageHeight);
+      for (const profile of profiles) {
+        updateVariables(engine, profile);
+        generateIdText(engine, profile, idText, pages);
+        const { MimeType } = CESDK;
+        const pdfBlob = await engine.block.export(scene, MimeType.Pdf);
+        const pdfBuffer = Buffer.from(await pdfBlob.arrayBuffer());
+        const pdf = await PDFDocument.load(pdfBuffer);
+        const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+        copiedPages.forEach((page) => mergedPdf.addPage(page));
+        logtail.info(`Generated pdf #${profilesGenerated + 1} out of ${profiles.length}`);
+      }
+    });
+    const pdfArray = await mergedPdf.save();
+    const pdf = Buffer.from(pdfArray);
+    return pdf;
+  } catch (error: any) {
+    throw new ErrorWithStatusCode(error.message, 500);
+  }
 }
 
 export async function sendPdfToPrintPartner(pdf: Buffer, campaign_id: string, dateString: string) {
@@ -948,6 +954,7 @@ export async function sendLettersForNonDemoUser(user_id: string, profiles: Profi
   // Generate pdf
   let pdf;
   try {
+    logtail.info(`Generating a pdf for user ${user_id} and campaign ${campaign_id}`);
     pdf = await generatePdf(profiles, designBlob);
     logtail.info(`Successfully generated a pdf for user ${user_id} and campaign ${campaign_id}`);
   } catch (error: any) {
@@ -960,6 +967,7 @@ export async function sendLettersForNonDemoUser(user_id: string, profiles: Profi
   const dateString = `${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
 
   try {
+    logtail.info(`Sending a pdf to the print partner for user ${user_id} and campaign ${campaign_id}`);
     await sendPdfToPrintPartner(pdf, user_id, dateString);
     logtail.info(`Successfully sent a pdf to the print partner for user ${user_id} and campaign ${campaign_id}`);
   } catch (error: any) {
@@ -968,6 +976,7 @@ export async function sendLettersForNonDemoUser(user_id: string, profiles: Profi
   }
 
   try {
+    logtail.info(`Generating a csv and sending it to the print partner for user ${user_id} and campaign ${campaign_id}`);
     await generateCsvAndSendToPrintPartner(profiles, user_id, dateString);
     logtail.info(`Successfully generated a csv and sent it to the print partner for user ${user_id} and campaign ${campaign_id}`);
   } catch (error: any) {
@@ -1177,9 +1186,7 @@ export async function periodicallySendLetters() {
       })
 
       for (const campaign of campaigns) {
-        logtail.info(`Checking campaign with id ${campaign.id}`);
         const recentProfileIds = await getRecentProfileIds(user);
-        logtail.info(`Recent profile ids: ${recentProfileIds.length}`);
         const segment = await prisma.segment.findFirst({
           where: {
             campaign: {
@@ -1208,9 +1215,7 @@ export async function periodicallySendLetters() {
 
         try {
           if (!segment.demo) {
-            logtail.info(`Sending letters for user ${campaign.user_id} and campaign ${campaign.id}`);
             await sendLettersForNonDemoUser(campaign.user_id, updatedProfiles, campaign.design.blob, campaign.id)
-            logtail.info(`Letters sent for user ${campaign.user_id} and campaign ${campaign.id}`);
           } else {
             await sendLettersForDemoUser(updatedProfiles, campaign.id, campaign.user_id)
           }
