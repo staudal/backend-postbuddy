@@ -578,13 +578,15 @@ export function generateBleedLines(engine: CreativeEngine, pages: number[], page
 
 export function updateFirstName(engine: CreativeEngine, profile: Profile) {
   const firstName = profile.first_name.split(" ")[0];
-  engine.variable.setString("Fornavn", firstName);
+  const formattedFirstName = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+  engine.variable.setString("Fornavn", formattedFirstName);
 }
 
 export function updateLastName(engine: CreativeEngine, profile: Profile) {
   const nameParts = profile.last_name.split(" ");
   const lastName = nameParts[nameParts.length - 1];
-  engine.variable.setString("Efternavn", lastName);
+  const formattedLastName = lastName.charAt(0).toUpperCase() + lastName.slice(1).toLowerCase();
+  engine.variable.setString("Efternavn", formattedLastName);
 }
 
 export function updateEmail(engine: CreativeEngine, profile: Profile) {
@@ -592,11 +594,15 @@ export function updateEmail(engine: CreativeEngine, profile: Profile) {
 }
 
 export function updateAddress(engine: CreativeEngine, profile: Profile) {
-  engine.variable.setString("Adresse", profile.address);
+  const formattedAddress = profile.address.split(" ").map(word =>
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join(" ");
+  engine.variable.setString("Adresse", formattedAddress);
 }
 
 export function updateCity(engine: CreativeEngine, profile: Profile) {
-  engine.variable.setString("By", profile.city);
+  const city = profile.city.charAt(0).toUpperCase() + profile.city.slice(1).toLowerCase();
+  engine.variable.setString("By", city);
 }
 
 export function updateZipCode(engine: CreativeEngine, profile: Profile) {
@@ -604,7 +610,8 @@ export function updateZipCode(engine: CreativeEngine, profile: Profile) {
 }
 
 export function updateCountry(engine: CreativeEngine, profile: Profile) {
-  engine.variable.setString("Land", profile.country);
+  const country = profile.country.charAt(0).toUpperCase() + profile.country.slice(1).toLowerCase();
+  engine.variable.setString("Land", country);
 }
 
 export function updateCustomVariable(engine: CreativeEngine, profile: Profile) {
@@ -900,7 +907,11 @@ export async function generateCsvAndSendToPrintPartner(profiles: Profile[], camp
 
   let csvData = "fullname,address,zip_city,id\n"; // CSV headers
   profiles.forEach((profile) => {
-    csvData += `"${profile.first_name} ${profile.last_name}","${profile.address}","${profile.zip_code} ${profile.city}","${profile.id.slice(-5)}"\n`;
+    const firstName = capitalizeWords(profile.first_name);
+    const lastName = capitalizeWords(profile.last_name);
+    const address = capitalizeWords(profile.address);
+    const city = capitalizeWords(profile.city);
+    csvData += `"${firstName} ${lastName}","${address}","${profile.zip_code} ${city}","${profile.id.slice(-5)}"\n`;
   });
   // Convert the CSV data to a Buffer
   const csvBuffer = Buffer.from(csvData);
@@ -914,13 +925,17 @@ export async function generateCsvAndSendToPrintPartner(profiles: Profile[], camp
   await client.end();
 }
 
+export function capitalizeWords(str: string) {
+  return str.split(" ").map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(" ");
+}
+
 export async function sendLettersForNonDemoUser(user_id: string, profiles: Profile[], designBlob: string, campaign_id: string) {
   // Try to bill the user for the letters sent
-  try {
+  /* try {
     await billUserForLettersSent(profiles.length, user_id);
   } catch (error: any) {
     throw new ErrorWithStatusCode(error.message, error.statusCode);
-  }
+  } */
 
   // Generate pdf
   let pdf;

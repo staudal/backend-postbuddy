@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import { logtail, prisma } from '../app';
-import { CampaignNotFoundError, DesignNotFoundError, ErrorWithStatusCode, FailedToBillUserError, FailedToCreateCampaignError, FailedToGeneratePdfError, FailedToScheduleCampaignError, FailedToSendPdfToPrintPartnerError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
+import { CampaignNotFoundError, DesignNotFoundError, FailedToBillUserError, FailedToCreateCampaignError, FailedToGeneratePdfError, FailedToScheduleCampaignError, FailedToSendPdfToPrintPartnerError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
 import { billUserForLettersSent, generateCsvAndSendToPrintPartner, generatePdf, generateTestDesign, sendLettersForNonDemoUser, sendPdfToPrintPartner } from '../functions';
-import Client from "ssh2-sftp-client";
 import { Campaign, Profile } from '@prisma/client';
 import { testProfile } from '../constants';
 
