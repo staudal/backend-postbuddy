@@ -99,27 +99,52 @@ export const saveOrders = async (user: User, shopifyOrders: Order[]) => {
   const BATCH_SIZE = 20000;
 
   try {
+    // Map of order IDs to shopify orders for quick lookup
+    const shopifyOrderMap = new Map(shopifyOrders.map(order => [order.id, order]));
+
+    // Split orders into batches
     for (let i = 0; i < shopifyOrders.length; i += BATCH_SIZE) {
       const batch = shopifyOrders.slice(i, i + BATCH_SIZE);
+      const orderIds = batch.map(order => order.id);
 
+      // Fetch existing orders in a single query
       const existingDbOrders = await prisma.order.findMany({
         where: {
           user_id: user.id,
-          order_id: { in: batch.map(shopifyOrder => shopifyOrder.id) },
+          order_id: { in: orderIds },
         },
       });
 
-      const newShopifyOrders = batch.filter(
-        (shopifyOrder) => !existingDbOrders.some((existingDbOrder) => existingDbOrder.order_id === shopifyOrder.id),
-      );
+      // Identify new Shopify orders
+      const existingOrderIds = new Set(existingDbOrders.map(order => order.order_id));
+      const newShopifyOrders = batch.filter(order => !existingOrderIds.has(order.id));
 
+      // Save new orders if any
       if (newShopifyOrders.length > 0) {
         await prisma.order.createMany({
-          data: newShopifyOrders.map(newShopifyOrder => formatOrderData(newShopifyOrder, user.id)),
+          data: newShopifyOrders.map(order => formatOrderData(order, user.id)),
           skipDuplicates: true,
         });
-
         ordersAdded += newShopifyOrders.length;
+      }
+
+      // Identify refunded orders from the existing DB orders
+      const refundedOrders = existingDbOrders.filter(dbOrder => {
+        const shopifyOrder = shopifyOrderMap.get(dbOrder.order_id);
+        return shopifyOrder && shopifyOrder.refunds.length > 0;
+      });
+
+      // Handle refunded orders if any
+      if (refundedOrders.length > 0) {
+        const refundOrderIds = refundedOrders.map(order => order.id);
+
+        await prisma.orderProfile.deleteMany({
+          where: { order_id: { in: refundOrderIds } },
+        });
+
+        await prisma.order.deleteMany({
+          where: { id: { in: refundOrderIds } },
+        });
       }
     }
   } catch (error) {
@@ -127,6 +152,8 @@ export const saveOrders = async (user: User, shopifyOrders: Order[]) => {
     throw new ErrorWithStatusCode(`Failed to save orders for user ${user.id}`, 500);
   }
 
+
+  // START: FOR SENDING EMAILS TO ADMIN WHEN FIRST ORDER IS SYNCED
   const allOrders = await prisma.order.count({
     where: { user_id: user.id },
   });
@@ -146,6 +173,7 @@ export const saveOrders = async (user: User, shopifyOrders: Order[]) => {
       }
     })();
   }
+  // END: FOR SENDING EMAILS TO ADMIN WHEN FIRST ORDER IS SYNCED
 
   return shopifyOrders;
 };
@@ -339,6 +367,9 @@ export async function triggerShopifyBulkQueries() {
                   city
                   country
                 }
+              }
+              refunds {
+                id
               }
               createdAt
               discountCodes

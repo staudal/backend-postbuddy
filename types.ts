@@ -17,12 +17,17 @@ export interface Customer {
   addresses: Address[];
 }
 
+export interface Refund {
+  id: string;
+}
+
 export interface Order {
   id: string;
   totalPriceSet: {
     shopMoney: ShopMoney;
   };
   customer: Customer;
+  refunds: Refund[];
   createdAt: string;
   discountCodes: string[];
 }
