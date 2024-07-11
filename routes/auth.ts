@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { logtail, prisma } from '../app';
 import jwt from 'jsonwebtoken';
-import { InternalServerError, PasswordResetTokenExpiredError, PasswordTooShortError, UserAlreadyExistsError, UserNotFoundError } from '../errors';
+import { InternalServerError, InvalidJwtTokenError, PasswordResetTokenExpiredError, PasswordTooShortError, UserAlreadyExistsError, UserNotFoundError } from '../errors';
 import argon2 from 'argon2';
 import { Resend } from 'resend';
 import { JWT_EXPIRATION_TIME, WEB_URL } from '../constants';
@@ -12,7 +12,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
 router.post('/signup', async (req, res) => {
   try {
-    const { firstName, lastName, company, email, password } = req.body;
+    const { firstName, lastName, company, email, password, marketing } = req.body;
 
     // email to lowercase
     const emailToLower = email.toLowerCase();
@@ -73,15 +73,17 @@ router.post('/signup', async (req, res) => {
       logtail.error(error);
     }
 
-    try {
-      const loops = new LoopsClient(process.env.LOOPS_API_KEY as string);
-      await loops.createContact(emailToLower, {
-        firstName,
-        lastName,
-        company,
-      });
-    } catch (error: any) {
-      logtail.error(error);
+    if (marketing) {
+      try {
+        const loops = new LoopsClient(process.env.LOOPS_API_KEY as string);
+        await loops.createContact(emailToLower, {
+          firstName,
+          lastName,
+          company,
+        });
+      } catch (error: any) {
+        logtail.error(error);
+      }
     }
 
     return res.status(201).json({
@@ -210,6 +212,8 @@ router.post('/reset-password', async (req, res) => {
     } catch (error) {
       if (error instanceof jwt.TokenExpiredError) {
         return res.status(401).json({ error: PasswordResetTokenExpiredError });
+      } else if (error instanceof jwt.JsonWebTokenError) {
+        return res.status(403).json({ error: InvalidJwtTokenError });
       }
       // Handle other jwt errors here if needed
 
