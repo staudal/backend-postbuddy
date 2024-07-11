@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { logtail, prisma } from '../app';
-import { DuplicateEmailSegmentError, DuplicateProfileSegmentError, IntegrationNotFoundError, InternalServerError, MissingRequiredParametersError, SegmentNotFoundError, UserNotFoundError } from '../errors';
+import { InsufficientRightsError, IntegrationNotFoundError, InternalServerError, MissingRequiredParametersError, ParsingError, SegmentNotFoundError, UserNotFoundError } from '../errors';
+import { SegmentCreatedSuccess, SegmentDeletedSuccess, SegmentImportedSuccess, SegmentUpdatedSuccess } from '../success';
 import { Profile } from '@prisma/client';
 import { detectDelimiter, generateUniqueFiveDigitId, getKlaviyoSegmentProfilesBySegmentId, returnProfilesInRobinson, splitCSVLine } from '../functions';
 import fs from 'fs';
@@ -49,9 +50,9 @@ router.delete('/:id', async (req, res) => {
     where: { id: req.params.id },
   });
 
-  if (!segment) return res.status(404).json({ error: 'Segment not found' });
+  if (!segment) return res.status(404).json({ error: SegmentNotFoundError });
 
-  if (segment.user_id !== user_id) return res.status(403).json({ error: 'Forbidden' });
+  if (segment.user_id !== user_id) return res.status(403).json({ error: InsufficientRightsError });
 
   await prisma.profile.deleteMany({
     where: { segment_id: req.params.id },
@@ -60,7 +61,7 @@ router.delete('/:id', async (req, res) => {
     where: { id: req.params.id },
   });
 
-  res.json({ success: 'Segment deleted successfully' });
+  return res.json({ success: SegmentDeletedSuccess });
 })
 
 router.put('/:id', async (req, res) => {
@@ -72,16 +73,16 @@ router.put('/:id', async (req, res) => {
     where: { id: req.params.id },
   });
 
-  if (!segment) return res.status(404).json({ error: 'Segment not found' });
+  if (!segment) return res.status(404).json({ error: SegmentNotFoundError });
 
-  if (segment.user_id !== user_id) return res.status(403).json({ error: 'Forbidden' });
+  if (segment.user_id !== user_id) return res.status(403).json({ error: InsufficientRightsError });
 
   await prisma.segment.update({
     where: { id: req.params.id },
     data: { name: newName },
   });
 
-  res.json({ success: 'Segment updated successfully' });
+  res.json({ success: SegmentUpdatedSuccess });
 })
 
 router.get('/export/:id', async (req, res) => {
@@ -187,34 +188,34 @@ router.post('/csv', (req, res) => {
 
   form.parse(req, async (err, fields, files) => {
     if (err) {
-      return res.status(500).json({ error: 'Error parsing the file' });
+      return res.status(500).json({ error: ParsingError });
     }
 
     const segmentName = Array.isArray(fields.segmentName) ? fields.segmentName[0] : fields.segmentName;
 
     if (!user_id || !segmentName) {
-      return res.status(400).json({ error: 'MissingRequiredParametersError' });
+      return res.status(400).json({ error: MissingRequiredParametersError });
     }
 
     const user = await prisma.user.findUnique({
       where: { id: user_id },
     });
-    if (!user) return res.status(404).json({ error: 'UserNotFoundError' });
+    if (!user) return res.status(404).json({ error: UserNotFoundError });
 
     if (!files.file) {
-      return res.status(400).json({ error: 'File is missing' });
+      return res.status(400).json({ error: MissingRequiredParametersError });
     }
 
     const file = Array.isArray(files.file) ? files.file[0] : files.file;
     fs.readFile(file.filepath, async (err, fileBuffer) => {
       if (err) {
-        return res.status(500).json({ error: 'Error reading the file' });
+        return res.status(500).json({ error: ParsingError });
       }
 
       const fileText = new TextDecoder("UTF-8").decode(fileBuffer);
       if (fileText.includes('�')) {
         return res.status(400).json({
-          error: 'Filen indeholder ugyldige tegn. Prøv at gemme filen som UTF-8 og prøv igen.'
+          error: ParsingError
         });
       }
 
@@ -266,6 +267,8 @@ router.post('/csv', (req, res) => {
         .filter((row) =>
           Object.values(row).every((cell) => cell !== "" && cell !== undefined)
         );
+
+      const duplicateEmails = rows.length - new Set(rows.map((row) => row.email)).size;
 
       const wrongCountries = rows.filter((row) => row.country !== "denmark" && row.country !== "danmark" && row.country !== "sweden" && row.country !== "sverige" && row.country !== "germany" && row.country !== "tyskland");
       rows = rows.filter((row) => row.country === "denmark" || row.country === "danmark" || row.country === "sweden" || row.country === "sverige" || row.country === "germany" || row.country === "tyskland");
@@ -353,9 +356,13 @@ router.post('/csv', (req, res) => {
         return res.status(201).json({
           response: `Segmentet blev importeret, men ${wrongCountries.length} profil(er) blev sprunget over, da de ikke er fra Danmark, Sverige eller Tyskland.`
         });
+      } else if (duplicateEmails > 0) {
+        return res.status(201).json({
+          response: `Segmentet blev importeret, men ${duplicateEmails} profil(er) blev sprunget over, da de har samme email som en anden profil i segmentet.`
+        });
       } else {
         return res.status(201).json({
-          response: "Segmentet blev importeret!"
+          response: SegmentImportedSuccess
         });
       }
     });
@@ -448,7 +455,7 @@ router.post('/klaviyo', async (req, res) => {
       include: { profiles: true, campaign: true },
     });
 
-    res.status(200).json({ success: 'Segment created successfully', skipped_profiles: klaviyoSegmentProfiles.skippedProfiles, reason: klaviyoSegmentProfiles.reason });
+    res.status(200).json({ success: SegmentImportedSuccess, skipped_profiles: klaviyoSegmentProfiles.skippedProfiles, reason: klaviyoSegmentProfiles.reason });
   } catch (error: any) {
     logtail.error(error);
     res.status(500).json({ error: InternalServerError });
@@ -474,7 +481,7 @@ router.post('/webhook', async (req, res) => {
     },
   });
 
-  return res.status(200).json({ success: 'Segment created successfully' });
+  return res.status(200).json({ success: SegmentCreatedSuccess });
 })
 
 export default router;

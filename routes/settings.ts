@@ -1,14 +1,12 @@
 import { Router } from 'express';
 import { prisma } from '../app';
-import { InternalServerError, MissingRequiredParametersError } from '../errors';
+import { MissingRequiredParametersError } from '../errors';
 
 const router = Router();
 
 router.put('/', async (req, res) => {
   const { user_id, firstName, lastName, company, address, zip, city, country, bufferDays } = req.body;
   if (!user_id) return MissingRequiredParametersError;
-
-  console.log(req.body);
 
   await prisma.user.update({
     where: { id: user_id },

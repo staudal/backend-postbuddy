@@ -22,6 +22,9 @@ export const FailedToScheduleCampaignError = 'Der opstod en fejl under planlægn
 export const MissingAuthorizationHeaderError = 'Manglende autorisationsheader';
 export const DuplicateEmailSegmentError = 'Segmentet indeholder to eller flere profiler med samme email';
 export const DuplicateProfileSegmentError = 'Segmentet indeholder to eller flere profiler med samme informationer';
+export const PasswordTooShortError = 'Adgangskoden skal være mindst 8 tegn lang';
+export const PasswordResetTokenExpiredError = 'Linket er udløbet. Bed om et nyt link, hvis du vil nulstille din adgangskode.'
+export const ParsingError = 'Der opstod en fejl under indlæsningen af data';
 
 export class ErrorWithStatusCode extends Error {
   statusCode: number;

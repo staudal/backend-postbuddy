@@ -286,7 +286,7 @@ router.get('/shopify/callback', async (req, res) => {
     }
   })();
 
-  return res.redirect(WEB_URL + '/dashboard/integrations');
+  return res.redirect(WEB_URL + '/integrations');
 })
 
 router.post('/klaviyo/connect', authenticateToken, async (req, res) => {

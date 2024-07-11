@@ -23,3 +23,4 @@ export const testProfile: Profile = {
   letter_sent_at: null,
 }
 export const pricePerLetter = 7.5
+export const JWT_EXPIRATION_TIME = '1d';

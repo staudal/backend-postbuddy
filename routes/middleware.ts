@@ -2,7 +2,6 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../app';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
-const JWT_EXPIRATION_TIME = '15m'; // Example: 15 minutes
 
 const authenticateToken = async (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];

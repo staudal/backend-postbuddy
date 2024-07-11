@@ -1,4 +1,4 @@
-import { Campaign, PrismaClient, Profile, User } from '@prisma/client'
+import { PrismaClient, Profile, User } from '@prisma/client'
 import { KlaviyoSegmentProfile, Order, ProfileToAdd } from './types'
 import { Order as PrismaOrder } from '@prisma/client'
 import Stripe from 'stripe';
@@ -7,7 +7,7 @@ import CreativeEngine, * as CESDK from '@cesdk/node';
 import { PDFDocument } from 'pdf-lib';
 import Client from "ssh2-sftp-client";
 import { createHmac } from 'node:crypto';
-import { API_URL, config } from './constants';
+import { config } from './constants';
 import { logtail } from './app';
 import { Resend } from 'resend';
 import { subDays } from 'date-fns';
