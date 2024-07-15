@@ -4,6 +4,7 @@ import { Order as PrismaOrder } from '@prisma/client'
 import Stripe from 'stripe';
 import { ErrorWithStatusCode, FailedToBillUserError, FailedToGeneratePdfError, FailedToSendPdfToPrintPartnerError, FailedToUpdateCampaignStatusError, FailedToUpdateProfilesToSentError, MissingSubscriptionError } from './errors';
 import CreativeEngine, * as CESDK from '@cesdk/node';
+import { MimeType } from '@cesdk/node';
 import { PDFDocument } from 'pdf-lib';
 import Client from "ssh2-sftp-client";
 import { createHmac } from 'node:crypto';
@@ -475,6 +476,7 @@ export async function generateTestDesign(blob: string, format: string): Promise<
     id: "kd4jXc9df0DsX",
     first_name: "Jens",
     last_name: "Hansen",
+    created_at: new Date(),
     address: "Bredgade 19D, 1.tv.",
     city: "København K",
     zip_code: "1260",
@@ -894,7 +896,6 @@ export async function generatePdf(profiles: Profile[], designBlob: string) {
       for (const profile of profiles) {
         updateVariables(engine, profile);
         generateIdText(engine, profile, idText, pages);
-        const { MimeType } = CESDK;
         const pdfBlob = await engine.block.export(scene, MimeType.Pdf);
         const pdfBuffer = Buffer.from(await pdfBlob.arrayBuffer());
         const pdf = await PDFDocument.load(pdfBuffer);
@@ -1238,7 +1239,7 @@ export async function periodicallySendLetters() {
           },
         });
 
-        if (!segment || segment.profiles.length === 0 || !campaign.design || !campaign.design.blob) {
+        if (!segment || segment.profiles.length === 0 || !campaign.design || !campaign.design.scene) {
           continue;
         }
 
@@ -1247,7 +1248,7 @@ export async function periodicallySendLetters() {
 
         try {
           if (!segment.demo) {
-            await sendLettersForNonDemoUser(campaign.user_id, updatedProfiles, campaign.design.blob, campaign.id)
+            await sendLettersForNonDemoUser(campaign.user_id, updatedProfiles, campaign.design.scene, campaign.id)
           } else {
             await sendLettersForDemoUser(updatedProfiles, campaign.id, campaign.user_id)
           }
@@ -1443,7 +1444,8 @@ export async function checkIfProfileIsInRobinson(profile: ProfileToAdd) {
 }
 
 async function getRecentProfileIds(user: User): Promise<string[]> {
-  const daysAgo = subDays(new Date(), user.buffer_days || 10);
+  const bufferDaysAsNumber = Number(user.buffer_days || 10n);
+  const daysAgo = subDays(new Date(), bufferDaysAsNumber);
   const BATCH_SIZE = 10000;
   let recentProfileIds: string[] = [];
   let skip = 0;

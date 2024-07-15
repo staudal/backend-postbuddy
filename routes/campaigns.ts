@@ -109,7 +109,7 @@ router.post('/', async (req, res) => {
   const design = await prisma.design.findUnique({
     where: { id: design_id },
   });
-  if (!design || !design.blob) return res.status(404).json({ error: DesignNotFoundError });
+  if (!design || !design.scene) return res.status(404).json({ error: DesignNotFoundError });
 
   const startDate = start_date ? new Date(start_date) : new Date().toISOString();
   let campaign: Campaign | null;
@@ -193,7 +193,7 @@ router.post('/test-letter', async (req, res) => {
   const design = await prisma.design.findUnique({
     where: { id: design_id },
   })
-  if (!design || !design.blob) return DesignNotFoundError
+  if (!design || !design.scene) return DesignNotFoundError
 
   if (!user.address || !user.zip_code || !user.city) MissingAddressError
 
@@ -207,7 +207,7 @@ router.post('/test-letter', async (req, res) => {
   // Generate pdf
   let pdf;
   try {
-    pdf = await generatePdf([testProfile], design.blob);
+    pdf = await generatePdf([testProfile], design.scene);
   } catch (error: any) {
     logtail.error(`An error occured while trying to generate a pdf for a test letter for user ${user_id}`);
     return res.status(500).json({ error: FailedToGeneratePdfError });

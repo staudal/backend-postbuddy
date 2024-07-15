@@ -3,14 +3,14 @@
     "sourceMap": true,
     "outDir": "dist",
     "strict": true,
-    "lib": ["esnext"],
+    "lib": ["esnext", "DOM"],
     "esModuleInterop": true,
     "inlineSources": true,
-    "module": "nodenext",
-    "moduleResolution": "nodenext", // Ensure correct handling
+    "module": "commonjs", // Adjust module to commonjs if targeting Node.js with CommonJS
+    "moduleResolution": "node", // Use "node" for module resolution
     "target": "esnext",
-    "allowSyntheticDefaultImports": true, // Ensures synthetic handling
-    "skipLibCheck": true // Helps compatibility fast-tracking resolution
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": false // Consider removing skipLibCheck for more thorough type checking
   },
-  "include": ["custom.d.ts", "routes/**/*.ts", "app.ts"]
+  "include": ["routes/**/*.ts", "app.ts"]
 }

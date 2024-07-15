@@ -8,7 +8,7 @@ router.post('/uploads', async (req, res) => {
   const { user_id, name, url, format, width, height } = req.body;
   if (!user_id || !name || !url || !format || !height || !width) return MissingRequiredParametersError
 
-  await prisma.uploads.create({
+  await prisma.upload.create({
     data: {
       name,
       url,
@@ -26,7 +26,7 @@ router.get('/uploads', async (req, res) => {
   const user_id = req.body.user_id;
   if (!user_id) return MissingRequiredParametersError
 
-  const uploads = await prisma.uploads.findMany({
+  const uploads = await prisma.upload.findMany({
     where: { user_id }
   });
 

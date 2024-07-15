@@ -14,8 +14,8 @@ router.post('/new', async (req, res) => {
   });
   if (!design) return res.status(404).json({ error: DesignNotFoundError });
 
-  if (design.blob) {
-    await del(design.blob)
+  if (design.scene) {
+    await del(design.scene)
   }
   const blob = await put(`scenes/${design_id}.txt`, scene, {
     access: 'public',
@@ -24,7 +24,7 @@ router.post('/new', async (req, res) => {
 
   await prisma.design.update({
     where: { id: design_id },
-    data: { blob: blob.url },
+    data: { scene: blob.url },
   })
 
   return res.status(200).json({ success: "Design uploaded to vercel blob" });

@@ -44,7 +44,7 @@ router.post('/letters', async (req, res) => {
     where: { id: campaign.design_id },
   });
 
-  if (!design || !design.blob) {
+  if (!design || !design.scene) {
     return res.status(404).json({ error: 'Design blev ikke fundet' });
   }
 
@@ -52,7 +52,7 @@ router.post('/letters', async (req, res) => {
   const date = new Date();
   const dateString = `${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
 
-  const pdf = await generatePdf(profiles, design.blob);
+  const pdf = await generatePdf(profiles, design.scene);
   await sendPdfToPrintPartner(pdf, campaign.id, dateString)
   await generateCsvAndSendToPrintPartner(profiles, campaign.id, dateString);
   await billUserForLettersSent(profiles, user.id);

@@ -4,150 +4,96 @@ generator client {
 
 datasource db {
   provider  = "postgresql"
-  url       = env("POSTGRES_PRISMA_URL")
-  directUrl = env("POSTGRES_URL_NON_POOLING")
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
-  id           String        @id @default(cuid())
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at   DateTime      @default(now()) @db.Timestamptz(6)
   first_name   String
   last_name    String
+  company      String
   email        String        @unique
   password     String
-  created_at   DateTime      @default(now())
   address      String?
   city         String?
   zip_code     String?
-  country      String        @default("Denmark")
-  company      String        @default("No company")
-  access_token String?       @unique
+  country      String        @default("denmark")
+  access_token String        @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   role         String        @default("user")
   demo         Boolean       @default(false)
-  buffer_days  Int           @default(0)
+  buffer_days  Int           @default(60)
   campaigns    Campaign[]
   designs      Design[]
   integrations Integration[]
   orders       Order[]
   segments     Segment[]
-  session      Session?
   subscription Subscription?
-  uploads      Uploads[]
+  uploads      Upload[]
 
   @@map("users")
 }
 
-model Session {
-  id         String   @id @default(cuid())
-  user_id    String   @unique
-  expires_at DateTime
-  user       User     @relation(fields: [user_id], references: [id])
-
-  @@map("sessions")
-}
-
-model Integration {
-  id               String    @id @default(cuid())
-  type             String
-  verifier         String?
-  token            String?
-  token_created_at DateTime?
-  scopes           String?
-  shop             String?
-  klaviyo_api_key  String?
-  user_id          String
-  user             User      @relation(fields: [user_id], references: [id])
-
-  @@map("integrations")
-}
-
-model Segment {
-  id         String    @id @default(cuid())
-  name       String
-  type       String
-  user_id    String
-  klaviyo_id String?
-  created_at DateTime  @default(now())
-  demo       Boolean   @default(false)
-  campaign   Campaign?
-  profiles   Profile[]
-  user       User      @relation(fields: [user_id], references: [id])
-
-  @@map("segments")
-}
-
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Campaign {
-  id               String   @id @default(cuid())
-  name             String
-  status           String
-  type             String
-  created_at       DateTime @default(now())
-  user_id          String
-  segment_id       String   @unique
-  design_id        String?
-  discount_codes   String[]
-  start_date       DateTime
-  confirmation_url String?  @unique
-  demo             Boolean  @default(false)
-  design           Design?  @relation(fields: [design_id], references: [id])
-  segment          Segment  @relation(fields: [segment_id], references: [id])
-  user             User     @relation(fields: [user_id], references: [id])
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  name           String
+  status         String
+  type           String
+  user_id        String   @db.Uuid
+  discount_codes String[]
+  start_date     DateTime @default(now()) @db.Timestamptz(6)
+  demo           Boolean  @default(false)
+  segment_id     String   @unique @db.Uuid
+  design_id      String   @db.Uuid
+  design         Design   @relation(fields: [design_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  segment        Segment  @relation(fields: [segment_id], references: [id])
+  user           User     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("campaigns")
 }
 
-model Profile {
-  id              String         @id @default(cuid())
-  first_name      String
-  last_name       String
-  address         String
-  city            String
-  zip_code        String
-  in_robinson     Boolean        @default(false)
-  segment_id      String
-  letter_sent     Boolean        @default(false)
-  klaviyo_id      String?
-  letter_sent_at  DateTime?
-  email           String
-  country         String         @default("Denmark")
-  custom_variable String?
-  demo            Boolean        @default(false)
-  orders          OrderProfile[]
-  segment         Segment        @relation(fields: [segment_id], references: [id])
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Design {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at DateTime   @default(now()) @db.Timestamptz(6)
+  user_id    String     @db.Uuid
+  name       String
+  format     String
+  scene      String?
+  thumbnail  String?
+  demo       Boolean    @default(false)
+  campaigns  Campaign[]
+  user       User       @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@index([segment_id])
-  @@map("profiles")
+  @@map("designs")
 }
 
-model Uploads {
-  id      String @id @default(cuid())
-  user_id String
-  name    String
-  url     String
-  format  String
-  height  Int
-  width   Int
-  user    User   @relation(fields: [user_id], references: [id])
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Integration {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  type             String
+  verifier         String?
+  token            String?
+  token_created_at DateTime? @default(now()) @db.Timestamptz(6)
+  scopes           String?
+  shop             String?
+  klaviyo_api_key  String?
+  user_id          String    @db.Uuid
+  user             User      @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@map("uploads")
+  @@map("integrations")
 }
 
-model Subscription {
-  id                   String  @id @default(cuid())
-  subscription_id      String  @unique
-  subscription_item_id String  @unique
-  user_id              String  @unique
-  status               String
-  customer_id          String?
-  user                 User    @relation(fields: [user_id], references: [id])
-
-  @@map("subscriptions")
-}
-
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Order {
-  id             String         @id @default(cuid())
-  created_at     DateTime       @default(now())
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at     DateTime       @default(now()) @db.Timestamptz(6)
   order_id       String
-  user_id        String
+  user_id        String         @db.Uuid
   amount         Float
   discount_codes String[]
   first_name     String
@@ -155,32 +101,89 @@ model Order {
   email          String
   address        String
   zip_code       String
-  user           User           @relation(fields: [user_id], references: [id])
+  user           User           @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   profiles       OrderProfile[]
 
   @@map("orders")
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model OrderProfile {
-  order_id   String  @map("order_id")
-  profile_id String  @map("profile_id")
-  order      Order   @relation(fields: [order_id], references: [id])
-  profile    Profile @relation(fields: [profile_id], references: [id])
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  order_id   String   @db.Uuid
+  profile_id String   @db.Uuid
+  order      Order    @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  profile    Profile  @relation(fields: [profile_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@id([order_id, profile_id])
   @@map("orders_profiles")
 }
 
-model Design {
-  id        String     @id @default(cuid())
-  user_id   String
-  format    String     @default("a5-horizontal")
-  name      String
-  blob      String?
-  thumbnail String?
-  demo      Boolean    @default(false)
-  campaigns Campaign[]
-  user      User       @relation(fields: [user_id], references: [id])
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Profile {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at      DateTime       @default(now()) @db.Timestamptz(6)
+  first_name      String
+  last_name       String
+  address         String
+  city            String
+  zip_code        String
+  in_robinson     Boolean        @default(false)
+  segment_id      String         @db.Uuid
+  letter_sent     Boolean        @default(false)
+  klaviyo_id      String?
+  letter_sent_at  DateTime?      @db.Timestamptz(6)
+  email           String
+  country         String         @default("denmark")
+  custom_variable String?
+  demo            Boolean        @default(false)
+  orders          OrderProfile[]
+  segment         Segment        @relation(fields: [segment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@map("designs")
+  @@map("profiles")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Segment {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  name       String
+  type       String
+  user_id    String    @db.Uuid
+  klaviyo_id String?
+  demo       Boolean   @default(false)
+  campaign   Campaign?
+  profiles   Profile[]
+  user       User      @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("segments")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Subscription {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  subscription_id      String   @unique
+  subscription_item_id String   @unique
+  user_id              String   @unique @db.Uuid
+  status               String
+  customer_id          String
+  user                 User     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("subscriptions")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Upload {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  name       String
+  user_id    String   @db.Uuid
+  url        String
+  format     String
+  height     String
+  width      String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("uploads")
 }

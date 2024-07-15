@@ -67,7 +67,7 @@ router.post('/duplicate', async (req, res) => {
   await prisma.design.create({
     data: {
       name: design.name,
-      blob: design.blob,
+      scene: design.scene,
       user_id: user.id,
       thumbnail: design.thumbnail,
       format: design.format,
@@ -205,11 +205,12 @@ router.post('/export', async (req, res) => {
   const design = await prisma.design.findUnique({
     where: { id: design_id, user_id },
   });
-  if (!design || !design.blob) return res.status(404).json({ error: DesignNotFoundError });
+  if (!design || !design.scene) return res.status(404).json({ error: DesignNotFoundError });
 
   const dummyProfile: Profile = {
     first_name: 'John',
     last_name: 'Doe',
+    created_at: new Date(),
     email: 'john@doe.dk',
     address: 'Testvej 1',
     city: 'Testby',
@@ -225,7 +226,7 @@ router.post('/export', async (req, res) => {
     id: '12345678',
   }
 
-  const pdf = await generatePdf([dummyProfile], design.blob)
+  const pdf = await generatePdf([dummyProfile], design.scene)
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', 'attachment; filename=export.pdf');
   res.send(pdf);

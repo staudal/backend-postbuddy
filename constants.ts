@@ -9,6 +9,7 @@ export const testProfile: Profile = {
   id: 'test',
   first_name: 'John',
   last_name: 'Doe',
+  created_at: new Date(),
   email: 'john@doe.dk',
   address: 'Testvej 1',
   city: 'Testby',
