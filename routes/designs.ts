@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { prisma } from '../app';
-import { DesignNotFoundError, InternalServerError, MissingRequiredParametersError, UserNotFoundError } from '../errors';
-import { del, put } from '@vercel/blob';
-import { generatePdf } from '../functions';
+import { logtail, prisma } from '../app';
+import { DesignNotFoundError, InternalServerError, MissingRequiredParametersError, SceneNotFoundError, UserNotFoundError } from '../errors';
+import { s3, generatePdf } from '../functions';
 import { Profile } from '@prisma/client';
+import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import multer from 'multer';
 
 const router = Router();
 
@@ -156,48 +157,6 @@ router.delete('/:id', async (req, res) => {
   return res.json({ success: 'Design slettet' });
 })
 
-router.post('/thumbnail', async (req, res) => {
-  const { user_id, design_id, thumbnail } = req.body;
-  if (!user_id || !design_id || !thumbnail) return res.status(400).json({ error: MissingRequiredParametersError });
-
-  const user = await prisma.user.findUnique({
-    where: { id: user_id },
-  });
-  if (!user) return res.status(404).json({ error: UserNotFoundError });
-
-  const design = await prisma.design.findUnique({
-    where: { id: design_id },
-  });
-  if (!design) return res.status(404).json({ error: DesignNotFoundError });
-
-  if (design && design.thumbnail) {
-    await del(design.thumbnail);
-    const newThumbnail = await put(`thumbnails/${design.id}-thumbnail.jpg`, thumbnail, {
-      access: "public",
-      contentType: "image/jpeg",
-    });
-    await prisma.design.update({
-      where: { id: design.id },
-      data: {
-        thumbnail: newThumbnail.url,
-      },
-    });
-  } else {
-    const newThumbnail = await put(`thumbnails/${design.id}-thumbnail.jpg`, thumbnail, {
-      access: "public",
-      contentType: "image/jpeg",
-    });
-    await prisma.design.update({
-      where: { id: design.id },
-      data: {
-        thumbnail: newThumbnail.url,
-      },
-    });
-  }
-
-  return res.status(200).json({ success: 'Thumbnail gemt' });
-})
-
 router.post('/export', async (req, res) => {
   const { user_id, design_id } = req.body;
   if (!user_id || !design_id) return res.status(400).json({ error: MissingRequiredParametersError });
@@ -231,5 +190,167 @@ router.post('/export', async (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename=export.pdf');
   res.send(pdf);
 })
+
+// used to fetch scene when loading a design in the editor
+router.get('/:id/scene', async (req, res) => {
+  const { id } = req.params;
+  if (!id) return res.status(400).json({ error: MissingRequiredParametersError });
+
+  try {
+    await prisma.$transaction(async (prisma) => {
+      const design = await prisma.design.findUnique({
+        where: { id },
+      });
+
+      if (!design || !design.scene) {
+        return res.status(404).json({ error: DesignNotFoundError });
+      }
+
+      const getObjectParams = {
+        Bucket: 'scenes',
+        Key: design.scene,
+      };
+
+      const s3res = await s3.send(new GetObjectCommand(getObjectParams));
+
+      if (!s3res.Body) {
+        return res.status(404).json({ error: SceneNotFoundError });
+      }
+
+      const bodyString = await s3res.Body.transformToString();
+      return res.status(200).send(bodyString);
+    });
+  } catch (error: any) {
+    logtail.error("Error fetching scene in editor", error);
+    res.status(500).json({ error: InternalServerError });
+  }
+});
+
+// used to upload scene when saving a design in the editor
+router.post('/:id/scene', async (req, res) => {
+  const { id } = req.params;
+  const { scene } = req.body;
+  if (!id || !scene) return res.status(400).json({ error: MissingRequiredParametersError });
+
+  try {
+    await prisma.$transaction(async (prisma) => {
+      const design = await prisma.design.findUnique({
+        where: { id },
+      });
+
+      if (!design) {
+        return res.status(404).json({ error: DesignNotFoundError });
+      }
+
+      const newSceneUUID = `${id}-scene`;
+      await s3.send(new PutObjectCommand({
+        Bucket: 'scenes',
+        Key: newSceneUUID,
+        Body: scene,
+        ContentType: 'text/plain',
+      }));
+
+      await prisma.design.update({
+        where: { id },
+        data: { scene: newSceneUUID },
+      });
+
+      return res.status(200).json({ success: 'Scene uploaded to aws' });
+    });
+  } catch (error: any) {
+    logtail.error("Error uploading scene in editor", error);
+    return res.status(500).json({ error: InternalServerError });
+  }
+});
+
+const upload = multer();
+// used for uploads in the editor
+router.post('/:id/upload', upload.single('file'), async (req, res) => {
+  const { id } = req.params;
+  const { name, format, width, height } = req.body;
+  const file = req.file;
+
+  if (!id || !name || !format || !width || !height || !file) {
+    return res.status(400).json({ error: MissingRequiredParametersError });
+  }
+
+  try {
+    await prisma.$transaction(async (prisma) => {
+      const design = await prisma.design.findUnique({
+        where: { id },
+      });
+
+      if (!design) {
+        return res.status(404).json({ error: DesignNotFoundError });
+      }
+
+      const s3Params = {
+        Bucket: 'uploads',
+        Key: `${id}/${name}`,
+        Body: file.buffer,
+        ContentType: format,
+      };
+      await s3.send(new PutObjectCommand(s3Params));
+
+      const newUpload = await prisma.upload.create({
+        data: {
+          name,
+          url: `https://rkjrflfwfqhhpwafimbe.supabase.co/storage/v1/object/public/uploads/${id}/${name}`,
+          user_id: design.user_id,
+          format,
+          height,
+          width,
+        },
+      });
+
+      res.status(201).json({ success: 'Upload created successfully', upload: newUpload });
+    });
+  } catch (error: any) {
+    logtail.error("Error uploading file in editor", error);
+    return res.status(500).json({ error: InternalServerError });
+  }
+});
+
+// used for updating thumbnails in the editor
+router.post('/:id/thumbnail', upload.single('file'), async (req, res) => {
+  const { id } = req.params;
+  const file = req.file;
+
+  if (!id || !file) {
+    return res.status(400).json({ error: MissingRequiredParametersError });
+  }
+
+  try {
+    await prisma.$transaction(async (prisma) => {
+      const design = await prisma.design.findUnique({
+        where: { id },
+      });
+
+      if (!design) {
+        return res.status(404).json({ error: DesignNotFoundError });
+      }
+
+      const s3Params = {
+        Bucket: 'thumbnails',
+        Key: `${id}-thumbnail.jpg`,
+        Body: file.buffer,
+        ContentType: 'image/jpeg',
+      };
+      await s3.send(new PutObjectCommand(s3Params));
+
+      await prisma.design.update({
+        where: { id },
+        data: {
+          thumbnail: `https://rkjrflfwfqhhpwafimbe.supabase.co/storage/v1/object/public/thumbnails/${id}-thumbnail.jpg`,
+        },
+      });
+
+      return res.status(200).json({ success: 'Thumbnail updated' });
+    });
+  } catch (error: any) {
+    logtail.error("Error updating thumbnail in editor", error);
+    return res.status(500).json({ error: InternalServerError });
+  }
+});
 
 export default router;

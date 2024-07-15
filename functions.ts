@@ -12,8 +12,19 @@ import { config } from './constants';
 import { logtail } from './app';
 import { Resend } from 'resend';
 import { subDays } from 'date-fns';
+import { S3Client } from '@aws-sdk/client-s3';
 
 const prisma = new PrismaClient()
+
+export const s3 = new S3Client({
+  forcePathStyle: true,
+  region: 'eu-central-1',
+  endpoint: 'https://rkjrflfwfqhhpwafimbe.supabase.co/storage/v1/s3',
+  credentials: {
+    accessKeyId: '317fb0867435e048caf40891fe400b38',
+    secretAccessKey: '8e2d04c347e7c863edeebb42a1e7db32bae73d6ee922103b24e61d2b7d5d4b50',
+  }
+})
 
 export const loadUserWithShopifyIntegration = async (userId: string) => {
   return await prisma.user.findUnique({
@@ -1403,7 +1414,7 @@ export async function checkIfProfileIsInRobinson(profile: ProfileToAdd) {
   const uniqueIdentifier = `${firstName},${lastName},${streetName},${zip}`;
 
   const response = await fetch(
-    "https://ypvaugzxzbcnyeun.public.blob.vercel-storage.com/robinson-FOvfyn47qzt6NRLKhYRGC65dcuQ9OL.csv"
+    "https://ypvaugzxzbcnyeun.public.blob.vercel-storage.com/robinson-cleaned-modified-jAzirx8qMWVzJ1DPEEIqct82TSyuVU.csv"
   );
 
   if (!response || !response.body) {

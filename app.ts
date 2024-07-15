@@ -13,7 +13,6 @@ import segmentRouter from "./routes/segments";
 import campaignRouter from "./routes/campaigns";
 import designRouter from "./routes/designs";
 import integrationRouter from "./routes/integrations";
-import blobRouter from "./routes/blob";
 import settingsRouter from "./routes/settings";
 import webhooksRouter from "./routes/webhooks";
 import subscriptionRouter from "./routes/subscriptions";
@@ -103,7 +102,6 @@ app.use('/profiles', authenticateToken, profilesRouter);
 app.use('/analytics', authenticateToken, analyticsRouter);
 app.use('/subscriptions', authenticateToken, subscriptionRouter);
 app.use('/settings', authenticateToken, settingsRouter);
-app.use('/blob', authenticateToken, blobRouter);
 
 // Partially protected routes
 app.use('/integrations', integrationRouter);
