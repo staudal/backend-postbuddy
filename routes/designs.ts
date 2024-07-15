@@ -255,7 +255,7 @@ router.post('/:id/scene', async (req, res) => {
         data: { scene: newSceneUUID },
       });
 
-      return res.status(200).json({ success: 'Scene uploaded to aws' });
+      return res.status(200).json({ success: 'Designet blev gemt' });
     });
   } catch (error: any) {
     logtail.error("Error uploading scene in editor", error);
