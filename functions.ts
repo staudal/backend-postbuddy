@@ -232,31 +232,28 @@ export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any
       const shopifyOrderCreatedAt = new Date(allOrder.created_at);
 
       if (shopifyOrderCreatedAt >= campaignStartDate && shopifyOrderCreatedAt <= campaignEndDate) {
-        const profiles = await prisma.profile.findMany({
+        const profile = await prisma.profile.findFirst({
           where: buildProfileWhereClause(allOrder, campaign.segment_id, revenueForDiscountCodesWithNoProfile),
           include: { orders: true },
         });
+        if (profile) {
+          const existingDbOrder = await prisma.orderProfile.findFirst({
+            where: {
+              order_id: allOrder.id,
+              profile_id: profile.id,
+            },
+          });
 
-        if (profiles.length > 0) {
-          for (const profile of profiles) {
-            const existingDbOrder = await prisma.orderProfile.findFirst({
-              where: {
-                order_id: allOrder.id,
-                profile_id: profile.id,
-              },
-            });
-
-            if (existingDbOrder) {
-              continue;
-            }
-
-            await prisma.orderProfile.create({
-              data: {
-                order_id: allOrder.id,
-                profile_id: profile.id,
-              },
-            });
+          if (existingDbOrder) {
+            continue;
           }
+
+          await prisma.orderProfile.create({
+            data: {
+              order_id: allOrder.id,
+              profile_id: profile.id,
+            },
+          });
         } else {
           // If no profile is found but the order discount code matches a campaign discount code, add the revenue to the campaign
           const discountCodes = allOrder.discount_codes;
@@ -313,7 +310,7 @@ export const buildProfileWhereClause = (allOrder: PrismaOrder, segmentId: string
   const email = allOrder.email.toLowerCase();
   const zip = allOrder.zip_code;
   const addressFull = allOrder.address;
-  /* const discountCodes = allOrder.discount_codes; */
+  const discountCodes = allOrder.discount_codes;
   const address = getAddressComponents(addressFull);
   const lastWordOfLastName = lastName.split(" ").pop() || "";
 
@@ -321,7 +318,7 @@ export const buildProfileWhereClause = (allOrder: PrismaOrder, segmentId: string
     OR: [
       { email },
       { address: { contains: address }, zip_code: zip, first_name: firstName, last_name: lastWordOfLastName },
-      /* { segment: { campaign: { discount_codes: { hasSome: discountCodes } } } }, */
+      { segment: { campaign: { discount_codes: { hasSome: discountCodes } } } },
     ],
     letter_sent: true,
     segment_id: segmentId,
