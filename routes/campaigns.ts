@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { logtail, prisma } from '../app';
 import { CampaignNotFoundError, DesignNotFoundError, FailedToBillUserError, FailedToCreateCampaignError, FailedToGeneratePdfError, FailedToScheduleCampaignError, FailedToSendPdfToPrintPartnerError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
 import { billUserForLettersSent, generateCsvAndSendToPrintPartner, generatePdf, generateTestDesign, periodicallySendLetters, sendLettersForNonDemoUser, sendPdfToPrintPartner } from '../functions';
-import { Campaign, Profile } from '@prisma/client';
+import { Campaign, Order, OrderProfile, Profile } from '@prisma/client';
 import { testProfile } from '../constants';
 
 const router = Router();
@@ -26,30 +26,20 @@ router.get('/', async (req, res) => {
           include: {
             profiles: {
               select: {
-                id: true,
-                first_name: true,
-                last_name: true,
-                address: true,
-                zip_code: true,
-                city: true,
-                email: true,
-                country: true,
                 letter_sent: true,
-                letter_sent_at: true,
                 orders: {
                   select: {
                     order: {
                       select: {
                         amount: true,
                       }
-                    }
+                    },
                   }
                 }
               }
             }
           }
         },
-        design: true,
       },
       orderBy: {
         created_at: "desc",
@@ -59,22 +49,14 @@ router.get('/', async (req, res) => {
     // Process the data on the backend
     const campaignData = campaigns.map((campaign) => {
       const lettersSentCount = campaign.segment.profiles.filter(profile => profile.letter_sent).length;
-
-      const profilesWithTotalAmount = campaign.segment.profiles.map(profile => {
-        const totalAmount = profile.orders.reduce((acc, orderProfile) => {
+      const campaignRevenue = campaign.segment.profiles.reduce((acc, profile) => {
+        return acc + profile.orders.reduce((acc, orderProfile) => {
           return acc + (orderProfile.order.amount || 0);
         }, 0);
-        return { ...profile, totalAmount };
-      });
-
-      // Sort profiles based on total order amount in descending order
-      profilesWithTotalAmount.sort((a, b) => b.totalAmount - a.totalAmount);
-
-      const campaignRevenue = profilesWithTotalAmount.reduce((acc, profile) => acc + profile.totalAmount, 0);
+      }, 0);
 
       return {
         ...campaign,
-        segment: { ...campaign.segment, profiles: profilesWithTotalAmount },
         lettersSent: lettersSentCount,
         campaignRevenue,
       };
@@ -86,6 +68,89 @@ router.get('/', async (req, res) => {
     return res.status(500).json({ InternalServerError });
   }
 });
+
+router.get('/:id', async (req, res) => {
+  const user_id = req.body.user_id;
+  const id = req.params.id;
+  if (!user_id || !id) return res.status(400).json({ error: MissingRequiredParametersError });
+
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: id },
+    include: {
+      segment: {
+        include: {
+          profiles: {
+            select: {
+              id: true,
+              first_name: true,
+              last_name: true,
+              address: true,
+              zip_code: true,
+              city: true,
+              email: true,
+              country: true,
+              letter_sent: true,
+              letter_sent_at: true,
+              orders: {
+                select: {
+                  order: {
+                    select: {
+                      amount: true,
+                      created_at: true,
+                    }
+                  },
+                  profile: {
+                    select: {
+                      letter_sent_at: true,
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      design: true,
+    },
+  });
+
+  if (!campaign) return res.status(404).json({ error: CampaignNotFoundError });
+
+  const lettersSentCount = campaign.segment.profiles.filter(profile => profile.letter_sent).length;
+
+  const profilesWithTotalAmount = campaign.segment.profiles.map(profile => {
+    const totalAmount = profile.orders.reduce((acc, orderProfile) => {
+      return acc + (orderProfile.order.amount || 0);
+    }, 0);
+    return { ...profile, totalAmount };
+  });
+
+  // Sort profiles based on total order amount in descending order
+  profilesWithTotalAmount.sort((a, b) => b.totalAmount - a.totalAmount);
+
+  const campaignRevenue = profilesWithTotalAmount.reduce((acc, profile) => acc + profile.totalAmount, 0);
+
+  // add "daysUntilFirstPurchase" to each profile
+  profilesWithTotalAmount.forEach((profile: any) => {
+    profile.fullName = `${profile.first_name} ${profile.last_name}`;
+    const firstOrder = profile.orders.find((order: any) => order.profile.letter_sent_at !== null);
+    if (firstOrder && firstOrder.profile.letter_sent_at !== null) {
+      const daysUntilFirstPurchase = Math.floor((firstOrder.order.created_at.getTime() - firstOrder.profile.letter_sent_at.getTime()) / (1000 * 60 * 60 * 24));
+      profile.daysUntilFirstPurchase = daysUntilFirstPurchase;
+    }
+  });
+
+  // add total number of profiles that have made a purchase
+  const profilesWithPurchase = profilesWithTotalAmount.filter(profile => profile.orders.length > 0).length;
+
+  return res.json({
+    ...campaign,
+    segment: { ...campaign.segment, profiles: profilesWithTotalAmount },
+    lettersSent: lettersSentCount,
+    campaignRevenue,
+    profilesWithPurchase,
+  });
+})
 
 router.post('/', async (req, res) => {
   const { user_id, name, type, segment_id, design_id, discountCodes, start_date } = req.body;
