@@ -107,88 +107,107 @@ export const fetchBulkOperationData = async (url: string, userId: string) => {
 };
 
 export const saveOrders = async (user: User, shopifyOrders: Order[]) => {
-  let ordersAdded = 0;
-  const BATCH_SIZE = 20000;
+  const BATCH_SIZE = 1000;
 
   try {
     // Map of order IDs to shopify orders for quick lookup
     const shopifyOrderMap = new Map(shopifyOrders.map(order => [order.id, order]));
 
     // Split orders into batches
+    const batches = [];
     for (let i = 0; i < shopifyOrders.length; i += BATCH_SIZE) {
-      const batch = shopifyOrders.slice(i, i + BATCH_SIZE);
+      batches.push(shopifyOrders.slice(i, i + BATCH_SIZE));
+    }
+
+    // Process each batch concurrently
+    await Promise.all(batches.map(async (batch) => {
       const orderIds = batch.map(order => order.id);
 
-      // Fetch existing orders in a single query
-      const existingDbOrders = await prisma.order.findMany({
-        where: {
-          user_id: user.id,
-          order_id: { in: orderIds },
-        },
+      // Use a transaction to handle all operations in the batch
+      await prisma.$transaction(async (prisma) => {
+        // Fetch existing orders in a single query
+        const existingDbOrders = await prisma.order.findMany({
+          where: {
+            user_id: user.id,
+            order_id: { in: orderIds },
+          },
+        });
+
+        // Identify new Shopify orders
+        const existingOrderIds = new Set(existingDbOrders.map(order => order.order_id));
+        const newShopifyOrders = batch.filter(order => !existingOrderIds.has(order.id));
+
+        // Save new orders if any
+        if (newShopifyOrders.length > 0) {
+          await prisma.order.createMany({
+            data: newShopifyOrders.map(order => formatOrderData(order, user.id)),
+            skipDuplicates: true,
+          });
+        }
+
+        // Identify refunded orders from the existing DB orders
+        const refundedOrders = existingDbOrders.filter(dbOrder => {
+          const shopifyOrder = shopifyOrderMap.get(dbOrder.order_id);
+          return shopifyOrder && shopifyOrder.refunds.length > 0;
+        });
+
+        // Handle refunded orders if any
+        if (refundedOrders.length > 0) {
+          const updates = refundedOrders.map(async (dbOrder) => {
+            const shopifyOrder = shopifyOrderMap.get(dbOrder.order_id);
+
+            if (!shopifyOrder) {
+              return;
+            }
+
+            let refundedAmount = 0;
+
+            // Calculate the total refunded amount from the refunded items
+            for (const refund of shopifyOrder.refunds) {
+              for (const refundItem of refund.refundLineItems) {
+                const subtotal = parseFloat(refundItem.subtotalSet.shopMoney.amount);
+                const totalTax = parseFloat(refundItem.totalTaxSet.shopMoney.amount);
+                refundedAmount += subtotal + totalTax;
+              }
+            }
+
+            // Update or delete the order amount in the database
+            const updatedAmount = dbOrder.amount - refundedAmount;
+
+            if (updatedAmount <= 0) {
+              // Delete the order if the total amount is 0 or negative
+              await prisma.orderProfile.deleteMany({
+                where: { order_id: dbOrder.id },
+              });
+
+              await prisma.order.delete({
+                where: { id: dbOrder.id },
+              });
+            } else {
+              // Update the order amount if it's positive
+              await prisma.order.update({
+                where: { id: dbOrder.id },
+                data: { amount: updatedAmount },
+              });
+            }
+          });
+
+          await Promise.all(updates);
+        }
       });
 
-      // Identify new Shopify orders
-      const existingOrderIds = new Set(existingDbOrders.map(order => order.order_id));
-      const newShopifyOrders = batch.filter(order => !existingOrderIds.has(order.id));
+    }));
 
-      // Save new orders if any
-      if (newShopifyOrders.length > 0) {
-        await prisma.order.createMany({
-          data: newShopifyOrders.map(order => formatOrderData(order, user.id)),
-          skipDuplicates: true,
-        });
-        ordersAdded += newShopifyOrders.length;
-      }
-
-      // Identify refunded orders from the existing DB orders
-      const refundedOrders = existingDbOrders.filter(dbOrder => {
-        const shopifyOrder = shopifyOrderMap.get(dbOrder.order_id);
-        return shopifyOrder && shopifyOrder.refunds.length > 0;
-      });
-
-      // Handle refunded orders if any
-      if (refundedOrders.length > 0) {
-        const refundOrderIds = refundedOrders.map(order => order.id);
-
-        await prisma.orderProfile.deleteMany({
-          where: { order_id: { in: refundOrderIds } },
-        });
-
-        await prisma.order.deleteMany({
-          where: { id: { in: refundOrderIds } },
-        });
-      }
-    }
   } catch (error) {
     logtail.error(`Failed to save orders for user ${user.id}: ${error}`);
     throw new ErrorWithStatusCode(`Failed to save orders for user ${user.id}`, 500);
+  } finally {
+    logtail.info(`Successfully saved/updated orders for user ${user.email}`);
   }
-
-
-  // START: FOR SENDING EMAILS TO ADMIN WHEN FIRST ORDER IS SYNCED
-  const allOrders = await prisma.order.count({
-    where: { user_id: user.id },
-  });
-
-  if (allOrders === 0 && ordersAdded > 0) {
-    const resend = new Resend(process.env.RESEND_API_KEY);
-    (async function () {
-      const { error } = await resend.emails.send({
-        from: 'Postbuddy <noreply@postbuddy.dk>',
-        to: ['jakob@postbuddy.dk', 'christian@postbuddy.dk'],
-        subject: `Ordre er nu synkroniseret for bruger: ${user.email}`,
-        html: `Det er første gang brugeren ${user.email} har synkroniseret ordrer. De kan nu tilgå analytics på Postbuddy.`,
-      });
-
-      if (error) {
-        logtail.error(`Failed to send email: ${error}`);
-      }
-    })();
-  }
-  // END: FOR SENDING EMAILS TO ADMIN WHEN FIRST ORDER IS SYNCED
 
   return shopifyOrders;
 };
+
 
 export const processOrdersForCampaigns = async (user: any, allOrders: PrismaOrder[]) => {
   try {

@@ -17,8 +17,24 @@ export interface Customer {
   addresses: Address[];
 }
 
+export interface MoneySet {
+  shopMoney: ShopMoney;
+  presentmentMoney: ShopMoney;
+}
+
 export interface Refund {
   id: string;
+  createdAt: string;
+  refundLineItems: RefundLineItem[];
+  // Add other fields like duties, orderAdjustments, etc. if needed
+}
+
+export interface RefundLineItem {
+  id: string;
+  lineItemId: string;
+  quantity: number;
+  subtotalSet: MoneySet;
+  totalTaxSet: MoneySet;
 }
 
 export interface Order {

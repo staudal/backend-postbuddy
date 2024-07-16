@@ -35,50 +35,72 @@ router.post('/bulk-query-trigger', async (req, res) => {
     const shopifyApiVersion = '2021-10';
 
     const shopifyBulkOperationQuery = `
-      mutation {
-        bulkOperationRunQuery(
-          query: """
-            {
-              orders(query: "created_at:>${dateOnly}") {
-                edges {
-                  node {
+  mutation {
+    bulkOperationRunQuery(
+      query: """
+        {
+          orders(query: "created_at:>${dateOnly}") {
+            edges {
+              node {
+                id
+                totalPriceSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+                }
+                customer {
+                  firstName
+                  lastName
+                  email
+                  addresses(first: 1) {
+                    address1
+                    zip
+                    city
+                    country
+                  }
+                }
+                createdAt
+                discountCodes
+                refunds {
+                  id
+                  createdAt
+                  refundLineItems {
                     id
-                    totalPriceSet {
+                    lineItemId
+                    quantity
+                    subtotalSet {
                       shopMoney {
                         amount
                         currencyCode
                       }
                     }
-                    customer {
-                      firstName
-                      lastName
-                      email
-                      addresses(first: 1) {
-                        address1
-                        zip
-                        city
-                        country
+                    totalTaxSet {
+                      shopMoney {
+                        amount
+                        currencyCode
                       }
                     }
-                    createdAt
-                    discountCodes
                   }
                 }
               }
             }
-          """
-        ) {
-          bulkOperation {
-            id
-            status
-          }
-          userErrors {
-            field
-            message
           }
         }
+      """
+    ) {
+      bulkOperation {
+        id
+        status
       }
-    `;
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
 
     const shopifyApiUrl = `https://${shopifyIntegration.shop}.myshopify.com/admin/api/${shopifyApiVersion}/graphql.json`;
     const response = await fetch(shopifyApiUrl, {
