@@ -206,6 +206,11 @@ router.get('/:id/scene', async (req, res) => {
         return res.status(404).json({ error: DesignNotFoundError });
       }
 
+      // if the design was uploaded to vercel, we need to fetch it from the old bucket
+      if (design.scene.includes('public.blob.vercel-storage.com')) {
+        return res.status(200).send(design.scene);
+      }
+
       const getObjectParams = {
         Bucket: 'scenes',
         Key: design.scene,
@@ -221,6 +226,7 @@ router.get('/:id/scene', async (req, res) => {
       return res.status(200).send(bodyString);
     });
   } catch (error: any) {
+    console.log(error);
     logtail.error("Error fetching scene in editor", error);
     res.status(500).json({ error: InternalServerError });
   }
