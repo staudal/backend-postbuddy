@@ -263,7 +263,7 @@ router.get('/shopify/callback', async (req: any, res: any) => {
 })
 
 router.post('/klaviyo/connect', async (req: any, res: any) => {
-  const { api_key, id: user_id } = req.body;
+  const { api_key, user_id } = req.body;
   if (!user_id || !api_key) return res.status(400).json({ error: MissingRequiredParametersError });
 
   const user = await prisma.user.findUnique({
