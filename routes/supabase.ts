@@ -299,7 +299,7 @@ router.post('/klaviyo/connect', async (req: any, res: any) => {
     return res.status(400).json({ error: "Ugyldig API key. Er du sikker på, den har read-access til profiler?" });
   }
 
-  await prisma.integration.create({
+  const newIntegration = await prisma.integration.create({
     data: {
       type: "klaviyo",
       user_id: user.id,
@@ -307,7 +307,7 @@ router.post('/klaviyo/connect', async (req: any, res: any) => {
     },
   });
 
-  return res.status(200).json({ success: "Klaviyo-integrationen blev oprettet" });
+  return res.status(200).json({ success: "Klaviyo-integrationen blev oprettet", newIntegration });
 })
 
 router.post('/klaviyo/disconnect', async (req: any, res: any) => {
