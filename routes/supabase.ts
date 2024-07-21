@@ -7,7 +7,7 @@ import { Resend } from "resend";
 const router = Router();
 
 router.post('/shopify/connect', async (req: any, res: any) => {
-  const { id: user_id } = req.body;
+  const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
   const user = await prisma.user.findUnique({
