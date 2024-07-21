@@ -28,7 +28,7 @@ router.post('/shopify/connect', async (req: any, res: any) => {
 })
 
 router.post('/shopify/disconnect', async (req: any, res: any) => {
-  const { id: user_id } = req.body;
+  const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
   const user = await prisma.user.findUnique({
@@ -73,11 +73,11 @@ router.get('/shopify/callback', async (req: any, res: any) => {
   const { code, state, hmac, host } = req.query;
   let shop = req.query.shop as string;
   if (!code || !state || !hmac || !host || !shop)
-    return res.status(400).json({ error: 'MissingRequiredParametersError' });
+    return res.status(400).json({ error: MissingRequiredParametersError });
 
   const queryWithoutHmac = extractQueryWithoutHMAC(url);
   const user = await prisma.user.findUnique({ where: { id: state as string } });
-  if (!user) return res.status(404).json({ error: 'UserNotFoundError' });
+  if (!user) return res.status(404).json({ error: UserNotFoundError });
 
   const sameHMAC = validateHMAC(queryWithoutHmac, hmac as string);
   if (!sameHMAC) return res.status(400).json({ error: 'Invalid HMAC' });
