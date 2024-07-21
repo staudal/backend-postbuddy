@@ -7,7 +7,7 @@ import { Resend } from "resend";
 const router = Router();
 
 router.get('/shopify/connect', async (req: any, res: any) => {
-  const { id: user_id } = req.user;
+  const { id: user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
   const user = await prisma.user.findUnique({
@@ -263,8 +263,7 @@ router.get('/shopify/callback', async (req: any, res: any) => {
 })
 
 router.post('/klaviyo/connect', async (req: any, res: any) => {
-  const { api_key } = req.body;
-  const { id: user_id } = req.user;
+  const { api_key, id: user_id } = req.body;
   if (!user_id || !api_key) return res.status(400).json({ error: MissingRequiredParametersError });
 
   const user = await prisma.user.findUnique({
