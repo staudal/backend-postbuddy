@@ -6,7 +6,7 @@ import { Resend } from "resend";
 
 const router = Router();
 
-router.get('/shopify/connect', async (req: any, res: any) => {
+router.post('/shopify/connect', async (req: any, res: any) => {
   const { id: user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -27,8 +27,8 @@ router.get('/shopify/connect', async (req: any, res: any) => {
   return res.status(200).json({ redirectUrl });
 })
 
-router.get('/shopify/disconnect', async (req: any, res: any) => {
-  const { id: user_id } = req.user;
+router.post('/shopify/disconnect', async (req: any, res: any) => {
+  const { id: user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
   const user = await prisma.user.findUnique({
@@ -310,7 +310,7 @@ router.post('/klaviyo/connect', async (req: any, res: any) => {
   return res.status(200).json({ success: "Klaviyo-integrationen blev oprettet" });
 })
 
-router.get('/klaviyo/disconnect', async (req: any, res: any) => {
+router.post('/klaviyo/disconnect', async (req: any, res: any) => {
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
