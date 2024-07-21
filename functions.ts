@@ -14,7 +14,7 @@ import { Resend } from 'resend';
 import { subDays } from 'date-fns';
 import { S3Client } from '@aws-sdk/client-s3';
 
-const prisma = new PrismaClient()
+export const prisma = new PrismaClient()
 
 export const s3 = new S3Client({
   forcePathStyle: true,

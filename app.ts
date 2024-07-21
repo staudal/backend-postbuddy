@@ -19,6 +19,7 @@ import subscriptionRouter from "./routes/subscriptions";
 import analyticsRouter from "./routes/analytics";
 import profilesRouter from "./routes/profiles";
 import adminRoute from "./routes/admin";
+import supabaseRouter from "./routes/supabase";
 import { errorHandler } from "./errorhandler";
 import pm2, { ProcessDescription } from 'pm2';
 import { activateScheduledCampaigns, periodicallySendLetters, triggerShopifyBulkQueries, updateKlaviyoProfiles } from "./functions";
@@ -91,6 +92,7 @@ app.use('/', indexRouter);
 app.use('/auth', authRouter);
 app.use('/webhooks', webhooksRouter);
 app.use('/shopify', shopifyRouter);
+app.use('/supabase', supabaseRouter);
 
 // Fully protected routes
 app.use('/designs', authenticateToken, designRouter);
