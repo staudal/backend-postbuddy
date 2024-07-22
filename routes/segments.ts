@@ -1,10 +1,9 @@
 import { Router } from 'express';
-import { logError, logger, logtail, logWarn, prisma } from '../app';
-import { ExceededMaxFileSizeError, InsufficientRightsError, IntegrationNotFoundError, InternalServerError, MISSING_HEADERS_ERROR, MissingRequiredParametersError, ParsingError, SegmentNotFoundError, UserNotFoundError } from '../errors';
-import { SegmentCreatedSuccess, SegmentDeletedSuccess, SegmentImportedSuccess, SegmentUpdatedSuccess } from '../success';
+import { logError, logWarn, prisma } from '../app';
+import { InsufficientRightsError, IntegrationNotFoundError, InternalServerError, MISSING_HEADERS_ERROR, MissingRequiredParametersError, ParsingError, PROFILE_NOT_FOUND_ERROR, SegmentNotFoundError, UserNotFoundError } from '../errors';
+import { SegmentDeletedSuccess, SegmentUpdatedSuccess } from '../success';
 import { Profile } from '@prisma/client';
-import { detectDelimiter, generateUniqueFiveDigitId, getKlaviyoSegmentProfilesBySegmentId, returnProfilesInRobinson, splitCSVLine } from '../functions';
-import { KlaviyoSegment } from '../types'; import { supabase } from '../constants';
+import { generateUniqueFiveDigitId, getKlaviyoSegmentProfilesBySegmentId, returnProfilesInRobinson } from '../functions';
 import { authenticateToken } from './middleware';
 import formidable from 'formidable';
 import fs from 'fs';
@@ -108,33 +107,28 @@ router.get('/', authenticateToken, async (req, res) => {
 
 // USED FOR SEGMENT DETAILS PAGE (to fetch a single segment)
 router.get('/:id', authenticateToken, async (req, res) => {
-  const { data, error } = await supabase
-    .from('segments')
-    .select('*')
-    .eq('id', req.params.id)
-    .single()
+  const segment = await prisma.segment.findUnique({
+    where: { id: req.params.id },
+    include: { campaign: true },
+  }) as any;
 
-  // Add profile_count to the segment (used for the segment details page)
-  if (data) {
-    const { data: profiles, error: profilesError } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('segment_id', req.params.id)
-
-    if (profilesError) {
-      console.error(profilesError);
-      return res.status(500).json({ error: InternalServerError });
-    }
-
-    (data as any).profile_count = profiles.length;
+  if (!segment) {
+    logWarn(SegmentNotFoundError, "GET /segments/:id", { user_id: req.body.user_id });
+    return res.status(404).json({ error: SegmentNotFoundError });
   }
 
-  if (error) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
+  if (segment.user_id !== req.body.user_id) {
+    logWarn(InsufficientRightsError, "GET /segments/:id", { user_id: req.body.user_id });
+    return res.status(403).json({ error: InsufficientRightsError });
   }
 
-  return res.status(200).json(data);
+  const profileCount = await prisma.profile.count({
+    where: { segment_id: req.params.id },
+  });
+
+  segment.profile_count = profileCount;
+
+  return res.status(200).json(segment);
 })
 
 // USED FOR SEGMENT DETAILS PAGE (to fetch all profiles in a segment)
@@ -142,21 +136,25 @@ router.get('/:id/profiles', authenticateToken, async (req, res) => {
   const page = req.query.page ? parseInt(req.query.page as string) : 1;
   const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
   const offset = (page - 1) * limit;
+  const sort = req.query.sort ? (req.query.sort as any).split(':') : ['created_at', 'desc'];
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('segment_id', req.params.id)
-    .range(offset, offset + limit - 1)
-    .order('created_at', { ascending: false })
+  const profiles = await prisma.profile.findMany({
+    where: {
+      segment_id: req.params.id,
+    },
+    skip: offset,
+    take: limit,
+    orderBy: {
+      [sort[0]]: sort[1],
+    },
+  });
 
-  if (error) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
-  }
+  profiles.forEach((profile: any) => {
+    profile.name = `${profile.first_name} ${profile.last_name}`;
+  });
 
-  return res.status(200).json(data);
-})
+  return res.status(200).json(profiles);
+});
 
 // USED FOR SEGMENTS PAGE (to delete a segment)
 router.delete('/:id', authenticateToken, async (req, res) => {
@@ -197,6 +195,34 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   }
 })
 
+// USED FOR SEGMENT DETAILS PAGE (to delete a segment profile)
+router.delete('/profile/:id', authenticateToken, async (req, res) => {
+
+  // Validate that the user has the rights to delete the segment
+  const profile = await prisma.profile.findUnique({
+    where: { id: req.params.id },
+  });
+
+  if (!profile) {
+    logWarn(PROFILE_NOT_FOUND_ERROR, "DELETE /segments/:id", { user_id: req.body.user_id });
+    return res.status(404).json({ error: SegmentNotFoundError });
+  }
+
+  try {
+    await prisma.$transaction(async (prisma) => {
+      await prisma.profile.delete({
+        where: {
+          id: req.params.id,
+        },
+      });
+    });
+    return res.status(200).json({ success: SegmentDeletedSuccess });
+  } catch (error) {
+    logError(error, { user_id: req.body.user_id });
+    return res.status(500).json({ error: InternalServerError });
+  }
+})
+
 // USED FOR SEGMENTS PAGE (to update a segment name)
 router.put('/:id', authenticateToken, async (req, res) => {
 
@@ -219,6 +245,40 @@ router.put('/:id', authenticateToken, async (req, res) => {
     await prisma.segment.update({
       where: { id: req.params.id },
       data: { name: req.body.segment_name },
+    });
+    return res.status(200).json({ success: SegmentUpdatedSuccess });
+  } catch (error) {
+    logError(error, { user_id: req.body.user_id });
+    return res.status(500).json({ error: InternalServerError });
+  }
+})
+
+// USED FOR SEGMENT DETAILS PAGE (to update a segment profile)
+router.put('/profile/:id', authenticateToken, async (req, res) => {
+
+  // validate that the user has the rights to update the segment
+  const profile = await prisma.profile.findUnique({
+    where: { id: req.params.id },
+  });
+
+  if (!profile) {
+    logWarn(PROFILE_NOT_FOUND_ERROR, "PUT /segments/profile/:id", { user_id: req.body.user_id });
+    return res.status(404).json({ error: PROFILE_NOT_FOUND_ERROR });
+  }
+
+  try {
+    await prisma.profile.update({
+      where: { id: req.params.id },
+      data: {
+        first_name: req.body.first_name,
+        last_name: req.body.last_name,
+        email: req.body.email,
+        address: req.body.address,
+        city: req.body.city,
+        zip_code: req.body.zip_code,
+        country: req.body.country,
+        custom_variable: req.body.custom_variable,
+      },
     });
     return res.status(200).json({ success: SegmentUpdatedSuccess });
   } catch (error) {

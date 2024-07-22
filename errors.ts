@@ -29,6 +29,7 @@ export const InvalidJwtTokenError = 'Ugyldigt token';
 export const SceneNotFoundError = 'Scenen findes ikke';
 export const ExceededMaxFileSizeError = 'CSV-filen kan maksimalt være 20 MB'
 export const MISSING_HEADERS_ERROR = (headers: string[]) => `Ugyldig CSV format. Følgende kolonner mangler: ${headers.join(', ')}`;
+export const PROFILE_NOT_FOUND_ERROR = "Profilen findes ikke";
 
 export class ErrorWithStatusCode extends Error {
   statusCode: number;
