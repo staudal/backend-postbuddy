@@ -12,5 +12,5 @@
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": false // Consider removing skipLibCheck for more thorough type checking
   },
-  "include": ["routes/**/*.ts", "app.ts"]
+  "include": ["routes/**/*.ts", "app.ts", "custom.d.ts"]
 }

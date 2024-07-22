@@ -1,7 +1,5 @@
-import jwt from 'jsonwebtoken';
 import { prisma } from '../app';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
+import { supabase } from '../constants';
 
 const authenticateToken = async (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
@@ -12,56 +10,22 @@ const authenticateToken = async (req: any, res: any, next: any) => {
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) {
+      return res.status(403).json({ error: 'Forbidden: Invalid token' });
+    }
 
-    // Optional: You can add more validation logic here, e.g., checking if the user exists in the database
-    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
-    if (!user) {
+    // Optional: Check if the user exists in your database
+    const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
+    if (!dbUser) {
       return res.status(403).json({ error: 'User not found' });
     }
 
-    req.body.user_id = user.id; // Attach the user ID to the request body
+    req.body.user_id = dbUser.id; // Attach the user ID to the request body
     next(); // Proceed to the next middleware or route handler
-  } catch (error: any) {
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Unauthorized: Token expired' });
-    }
+  } catch (error) {
     return res.status(403).json({ error: 'Forbidden: Invalid token' });
   }
 };
 
-const adminOnly = async (req: any, res: any, next: any) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ error: 'Unauthorized: No token provided' });
-  }
-
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
-
-    // Ensure the user exists in the database
-    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
-    if (!user) {
-      return res.status(403).json({ error: 'User not found' });
-    }
-
-    // Check if the user is an admin
-    if (user.role !== 'admin') {
-      return res.status(403).json({ error: 'Forbidden: Admins only' });
-    }
-
-    // Attach the user information to the request object
-    req.body.user_id = user.id;
-
-    next(); // Proceed to the next middleware or route handler
-  } catch (error: any) {
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Unauthorized: Token expired' });
-    }
-    return res.status(403).json({ error: 'Forbidden: Invalid token' });
-  }
-};
-
-export { authenticateToken, adminOnly };
+export { authenticateToken };

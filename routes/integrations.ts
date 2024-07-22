@@ -3,10 +3,29 @@ import { prisma } from '../app';
 import { InternalServerError, MissingRequiredParametersError, UserNotFoundError } from '../errors';
 import { extractQueryWithoutHMAC, validateHMAC } from '../functions';
 import { authenticateToken } from './middleware';
-import { API_URL, WEB_URL } from '../constants';
+import { API_URL, supabase, WEB_URL } from '../constants';
 import { Resend } from 'resend';
 
 const router = Router();
+
+router.get('/klaviyo', authenticateToken, async (req, res) => {
+  const { data, error } = await supabase
+    .from('integrations')
+    .select('*')
+    .eq('user_id', req.body.user_id)
+    .eq('type', 'klaviyo')
+
+  if (error) {
+    console.error(error);
+    return res.status(500).json({ error: InternalServerError });
+  }
+
+  if (data.length === 0) {
+    return res.status(204)
+  } else {
+    return res.json(data[0]);
+  }
+})
 
 router.get('/', authenticateToken, async (req, res) => {
   const user_id = req.body.user_id;
@@ -293,11 +312,6 @@ router.post('/klaviyo/connect', authenticateToken, async (req, res) => {
   const { user_id, api_key } = req.body;
   if (!user_id || !api_key) return res.status(400).json({ error: MissingRequiredParametersError });
 
-  const user = await prisma.user.findUnique({
-    where: { id: user_id },
-  });
-  if (!user) return res.status(404).json({ error: UserNotFoundError });
-
   const klaviyoResponse = await fetch("https://a.klaviyo.com/api/segments/", {
     method: "GET",
     headers: {
@@ -326,13 +340,18 @@ router.post('/klaviyo/connect', authenticateToken, async (req, res) => {
     return res.status(400).json({ error: "Ugyldig API key. Er du sikker på, den har read-access til profiler?" });
   }
 
-  await prisma.integration.create({
-    data: {
-      type: "klaviyo",
-      user_id: user.id,
+  const { error } = await supabase
+    .from('integrations')
+    .insert({
+      type: 'klaviyo',
       klaviyo_api_key: api_key,
-    },
-  });
+      user_id,
+    })
+
+  if (error) {
+    console.error(error);
+    return res.status(500).json({ error: InternalServerError });
+  }
 
   return res.status(200).json({ success: "Klaviyo-integrationen blev oprettet" });
 })

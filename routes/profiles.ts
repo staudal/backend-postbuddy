@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { logtail, prisma } from '../app';
 import { DuplicateEmailSegmentError, DuplicateProfileSegmentError, MissingAuthorizationHeaderError, MissingRequiredParametersError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
-import { API_URL } from '../constants';
 import { checkIfProfileIsInRobinson } from '../functions';
 
 const router = Router();
