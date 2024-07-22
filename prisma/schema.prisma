@@ -43,15 +43,16 @@ model Campaign {
   status         String
   type           String
   user_id        String   @db.Uuid
-  discount_codes String[]
   start_date     DateTime @default(now()) @db.Timestamptz(6)
   demo           Boolean  @default(false)
   segment_id     String   @unique @db.Uuid
   design_id      String   @db.Uuid
-  design         Design   @relation(fields: [design_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  segment        Segment  @relation(fields: [segment_id], references: [id])
-  user           User     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  discount_codes String[]
+  design         Design   @relation(fields: [design_id], references: [id], onDelete: NoAction)
+  segment        Segment  @relation(fields: [segment_id], references: [id], onDelete: NoAction)
+  user           User     @relation(fields: [user_id], references: [id], onDelete: NoAction)
 
+  @@index([segment_id])
   @@map("campaigns")
 }
 
@@ -66,7 +67,7 @@ model Design {
   thumbnail  String?
   demo       Boolean    @default(false)
   campaigns  Campaign[]
-  user       User       @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user       User       @relation(fields: [user_id], references: [id], onDelete: NoAction)
 
   @@map("designs")
 }
@@ -83,7 +84,7 @@ model Integration {
   shop             String?
   klaviyo_api_key  String?
   user_id          String    @db.Uuid
-  user             User      @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user             User      @relation(fields: [user_id], references: [id], onDelete: NoAction)
 
   @@map("integrations")
 }
@@ -95,13 +96,13 @@ model Order {
   order_id       String
   user_id        String         @db.Uuid
   amount         Float
-  discount_codes String[]
   first_name     String
   last_name      String
   email          String
   address        String
   zip_code       String
-  user           User           @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  discount_codes String[]
+  user           User           @relation(fields: [user_id], references: [id], onDelete: NoAction)
   profiles       OrderProfile[]
 
   @@map("orders")
@@ -113,8 +114,8 @@ model OrderProfile {
   created_at DateTime @default(now()) @db.Timestamptz(6)
   order_id   String   @db.Uuid
   profile_id String   @db.Uuid
-  order      Order    @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  profile    Profile  @relation(fields: [profile_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  order      Order    @relation(fields: [order_id], references: [id], onDelete: NoAction)
+  profile    Profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
 
   @@map("orders_profiles")
 }
@@ -138,8 +139,10 @@ model Profile {
   custom_variable String?
   demo            Boolean        @default(false)
   orders          OrderProfile[]
-  segment         Segment        @relation(fields: [segment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  segment         Segment        @relation(fields: [segment_id], references: [id], onDelete: Cascade)
 
+  @@index([segment_id])
+  @@index([in_robinson])
   @@map("profiles")
 }
 
@@ -154,8 +157,10 @@ model Segment {
   demo       Boolean   @default(false)
   campaign   Campaign?
   profiles   Profile[]
-  user       User      @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user       User      @relation(fields: [user_id], references: [id], onDelete: NoAction)
 
+  @@index([user_id])
+  @@index([created_at])
   @@map("segments")
 }
 
@@ -168,7 +173,7 @@ model Subscription {
   user_id              String   @unique @db.Uuid
   status               String
   customer_id          String
-  user                 User     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user                 User     @relation(fields: [user_id], references: [id], onDelete: NoAction)
 
   @@map("subscriptions")
 }
@@ -181,9 +186,9 @@ model Upload {
   user_id    String   @db.Uuid
   url        String
   format     String
-  height     String
-  width      String
-  user       User     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  height     Int      @default(1000)
+  width      Int      @default(1000)
+  user       User     @relation(fields: [user_id], references: [id], onDelete: NoAction)
 
   @@map("uploads")
 }

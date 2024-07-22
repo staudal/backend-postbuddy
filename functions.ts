@@ -13,7 +13,11 @@ import { logtail } from './app';
 import { subDays } from 'date-fns';
 import { S3Client } from '@aws-sdk/client-s3';
 
-export const prisma = new PrismaClient()
+export const prisma = new PrismaClient({
+  transactionOptions: {
+    timeout: 10000,
+  }
+})
 
 export const s3 = new S3Client({
   forcePathStyle: true,
@@ -854,7 +858,7 @@ export async function returnProfilesInRobinson(profiles: ProfileToAdd[]) {
 
   const foundProfiles: ProfileToAdd[] = [];
   const response = await fetch(
-    "https://ypvaugzxzbcnyeun.public.blob.vercel-storage.com/robinson-cleaned-modified-jAzirx8qMWVzJ1DPEEIqct82TSyuVU.csv"
+    "https://rkjrflfwfqhhpwafimbe.supabase.co/storage/v1/object/public/robinson/robinson-modified.csv?t=2024-07-22T07%3A38%3A39.872Z"
   );
 
   if (!response || !response.body) {

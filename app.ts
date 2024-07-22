@@ -24,6 +24,78 @@ import pm2, { ProcessDescription } from 'pm2';
 import { activateScheduledCampaigns, periodicallySendLetters, triggerShopifyBulkQueries, updateKlaviyoProfiles } from "./functions";
 import path from "path";
 import { Logtail } from "@logtail/node";
+import winston from "winston";
+
+// Define custom logging levels
+const customLevels = {
+  levels: {
+    error: 0,
+    warn: 1,
+    info: 2,
+    debug: 3,
+  },
+  colors: {
+    error: 'red',
+    warn: 'yellow',
+    info: 'green',
+    debug: 'blue',
+  },
+};
+
+// Apply the custom logging levels
+winston.addColors(customLevels.colors);
+
+// Create the logger
+export const logger = winston.createLogger({
+  levels: customLevels.levels,
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }), // Capture stack trace for errors
+    winston.format.json() // Log in JSON format
+  ),
+  transports: [
+    new winston.transports.Console({
+      format: winston.format.simple(),
+      level: 'debug', // Adjust console logging level as needed
+    }),
+    new winston.transports.File({
+      filename: 'warns.log',
+      level: 'warn',
+      format: winston.format.combine(
+        winston.format((info) => (info.level === 'warn' ? info : false))() // Filter only warn level
+      ),
+    }),
+    new winston.transports.File({
+      filename: 'errors.log',
+      level: 'error',
+      format: winston.format.combine(
+        winston.format((info) => (info.level === 'error' ? info : false))() // Filter only error level
+      ),
+    }),
+  ],
+});
+
+// Custom log function for errors
+export const logError = (error: any, additionalInfo: Record<string, any> = {}) => {
+  logger.error({
+    error: {
+      message: error.message,
+      stack: error.stack,
+      clientVersion: error.clientVersion,
+      code: error.code,
+      meta: error.meta,
+    },
+    additionalInfo,
+  });
+};
+
+// Custom log function for warnings
+export const logWarn = (message: string, endpoint: string, additionalInfo: Record<string, any> = {}) => {
+  logger.warn({
+    message: message + ' thrown at endpoint: ' + endpoint,
+    additionalInfo,
+  });
+};
 
 export const logtail = new Logtail("QrngmT7yBCxZSM4zsqSn4jgX");
 

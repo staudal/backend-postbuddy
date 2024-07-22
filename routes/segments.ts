@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { logtail, prisma } from '../app';
-import { InsufficientRightsError, IntegrationNotFoundError, InternalServerError, MissingRequiredParametersError, ParsingError, SegmentNotFoundError, UserNotFoundError } from '../errors';
+import { logError, logger, logtail, logWarn, prisma } from '../app';
+import { ExceededMaxFileSizeError, InsufficientRightsError, IntegrationNotFoundError, InternalServerError, MISSING_HEADERS_ERROR, MissingRequiredParametersError, ParsingError, SegmentNotFoundError, UserNotFoundError } from '../errors';
 import { SegmentCreatedSuccess, SegmentDeletedSuccess, SegmentImportedSuccess, SegmentUpdatedSuccess } from '../success';
 import { Profile } from '@prisma/client';
 import { detectDelimiter, generateUniqueFiveDigitId, getKlaviyoSegmentProfilesBySegmentId, returnProfilesInRobinson, splitCSVLine } from '../functions';
@@ -8,49 +8,102 @@ import { KlaviyoSegment } from '../types'; import { supabase } from '../constant
 import { authenticateToken } from './middleware';
 import formidable from 'formidable';
 import fs from 'fs';
+import Papa from 'papaparse';
 
 const router = Router();
 
 // USED FOR SEGMENTS PAGE (to fetch all segments)
 router.get('/', authenticateToken, async (req, res) => {
-  // Fetch the segments
-  const { data: segments, error: segmentsError } = await supabase
-    .from('segments')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .eq('user_id', req.body.user_id);
+  try {
+    const userId = req.body.user_id;
 
-  if (segmentsError) {
-    console.error(segmentsError);
-    return res.status(500).json({ error: 'InternalServerError' });
-  }
+    // Fetch all segments for the user
+    const segments = await prisma.segment.findMany({
+      where: {
+        user_id: userId,
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
 
-  // Fetch profile counts and in_robinson counts for each segment
-  const segmentsWithCounts = await Promise.all(segments.map(async (segment) => {
-    const { count: profileCount, error: profileCountError } = await supabase
-      .from('profiles')
-      .select('id', { count: 'exact' })
-      .eq('segment_id', segment.id);
-
-    const { count: robinsonCount, error: robinsonCountError } = await supabase
-      .from('profiles')
-      .select('id', { count: 'exact' })
-      .eq('segment_id', segment.id)
-      .eq('in_robinson', true);
-
-    if (profileCountError || robinsonCountError) {
-      console.error(profileCountError || robinsonCountError);
-      return { ...segment, profile_count: 0, in_robinson_count: 0 };
+    if (segments.length === 0) {
+      return res.status(200).json([]);
     }
 
-    return {
-      ...segment,
-      profile_count: profileCount,
-      in_robinson_count: robinsonCount,
-    };
-  }));
+    // Fetch all profiles and campaigns related to these segments
+    const segmentIds = segments.map(segment => segment.id);
 
-  return res.status(200).json(segmentsWithCounts);
+    // Fetch profile counts for these segments
+    const profileCounts = await prisma.profile.groupBy({
+      by: ['segment_id'],
+      where: {
+        segment_id: {
+          in: segmentIds,
+        },
+      },
+      _count: {
+        _all: true,
+      },
+    });
+
+    // Fetch in_robinson profile counts for these segments
+    const inRobinsonCounts = await prisma.profile.groupBy({
+      by: ['segment_id'],
+      where: {
+        segment_id: {
+          in: segmentIds,
+        },
+        in_robinson: true,
+      },
+      _count: {
+        _all: true,
+      },
+    });
+
+    // Fetch all campaigns related to these segments
+    const campaigns = await prisma.campaign.findMany({
+      where: {
+        segment_id: {
+          in: segmentIds,
+        },
+      },
+    });
+
+    // Create a map for campaign lookups
+    const campaignMap = new Map(campaigns.map(campaign => [campaign.segment_id, campaign]));
+
+    // Create a map for profile counts
+    const profileCountMap = new Map(profileCounts.map(count => [
+      count.segment_id,
+      count._count._all,
+    ]));
+
+    // Create a map for in_robinson counts
+    const inRobinsonCountMap = new Map(inRobinsonCounts.map(count => [
+      count.segment_id,
+      count._count._all,
+    ]));
+
+    // Process segments
+    const resultSegments = segments.map(segment => {
+      const profile_count = profileCountMap.get(segment.id) || 0;
+      const in_robinson_count = inRobinsonCountMap.get(segment.id) || 0;
+      const connected = campaignMap.has(segment.id);
+
+      return {
+        ...segment,
+        profile_count,
+        in_robinson_count,
+        connected,
+      };
+    });
+
+    return res.status(200).json(resultSegments);
+  } catch (error) {
+    logError(error, { user_id: req.body.user_id });
+    return res.status(500).json({ error: InternalServerError });
+  }
 });
 
 // USED FOR SEGMENT DETAILS PAGE (to fetch a single segment)
@@ -84,7 +137,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
   return res.status(200).json(data);
 })
 
-// USED FOR SEGMENTS PAGE (to fetch all profiles in a segment)
+// USED FOR SEGMENT DETAILS PAGE (to fetch all profiles in a segment)
 router.get('/:id/profiles', authenticateToken, async (req, res) => {
   const page = req.query.page ? parseInt(req.query.page as string) : 1;
   const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
@@ -107,81 +160,109 @@ router.get('/:id/profiles', authenticateToken, async (req, res) => {
 
 // USED FOR SEGMENTS PAGE (to delete a segment)
 router.delete('/:id', authenticateToken, async (req, res) => {
-  const { error } = await supabase
-    .from('segments')
-    .delete()
-    .eq('id', req.params.id)
 
-  if (error) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
+  // Validate that the user has the rights to delete the segment
+  const segment = await prisma.segment.findUnique({
+    where: { id: req.params.id },
+  });
+
+  if (!segment) {
+    logWarn(SegmentNotFoundError, "DELETE /segments/:id", { user_id: req.body.user_id });
+    return res.status(404).json({ error: SegmentNotFoundError });
   }
 
-  return res.status(200).json({ success: SegmentDeletedSuccess });
+  if (segment.user_id !== req.body.user_id) {
+    logWarn(InsufficientRightsError, "DELETE /segments/:id", { user_id: req.body.user_id });
+    return res.status(403).json({ error: InsufficientRightsError });
+  }
+
+  try {
+    await prisma.$transaction(async (prisma) => {
+      await prisma.profile.deleteMany({
+        where: {
+          segment_id: req.params.id,
+        },
+      });
+
+      await prisma.segment.delete({
+        where: {
+          id: req.params.id,
+        },
+      });
+    });
+    return res.status(200).json({ success: SegmentDeletedSuccess });
+  } catch (error) {
+    logError(error, { user_id: req.body.user_id });
+    return res.status(500).json({ error: InternalServerError });
+  }
 })
 
 // USED FOR SEGMENTS PAGE (to update a segment name)
 router.put('/:id', authenticateToken, async (req, res) => {
-  const { error } = await supabase
-    .from('segments')
-    .update({ name: req.body.segment_name })
-    .eq('id', req.params.id)
 
-  if (error) {
-    console.error(error);
-    return res.status(500).json({ error: InternalServerError });
+  // validate that the user has the rights to update the segment
+  const segment = await prisma.segment.findUnique({
+    where: { id: req.params.id },
+  });
+
+  if (!segment) {
+    logWarn(SegmentNotFoundError, "PUT /segments/:id", { user_id: req.body.user_id });
+    return res.status(404).json({ error: SegmentNotFoundError });
   }
 
-  return res.status(200).json({ success: SegmentUpdatedSuccess });
+  if (segment.user_id !== req.body.user_id) {
+    logWarn(InsufficientRightsError, "PUT /segments/:id", { user_id: req.body.user_id });
+    return res.status(403).json({ error: InsufficientRightsError });
+  }
+
+  try {
+    await prisma.segment.update({
+      where: { id: req.params.id },
+      data: { name: req.body.segment_name },
+    });
+    return res.status(200).json({ success: SegmentUpdatedSuccess });
+  } catch (error) {
+    logError(error, { user_id: req.body.user_id });
+    return res.status(500).json({ error: InternalServerError });
+  }
 })
 
 // USED FOR SEGMENTS PAGE (to import a segment from Klaviyo)
 router.post('/klaviyo', async (req, res) => {
+  const { user_id, selected_segment } = req.body;
+
+  if (!user_id || !selected_segment) {
+    return res.status(400).json({ error: MissingRequiredParametersError });
+  }
+
   try {
-    const { user_id } = req.body;
-    if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
-
-    const selected_segment = req.body.selected_segment as KlaviyoSegment
-
-    if (!selected_segment) return res.status(400).json({ error: MissingRequiredParametersError });
-
+    // Step 1: Fetch necessary data outside the transaction
     const user = await prisma.user.findUnique({
       where: { id: user_id },
     });
-    if (!user) return res.status(404).json({ error: UserNotFoundError });
+    if (!user) {
+      logWarn(UserNotFoundError, "POST /segments/klaviyo", { user_id, selected_segment });
+      return res.status(404).json({ error: UserNotFoundError });
+    }
 
     const integration = await prisma.integration.findFirst({
       where: {
         user_id: user.id,
-        type: "klaviyo",
+        type: 'klaviyo',
       },
     });
-    if (!integration || !integration.klaviyo_api_key) return res.status(400).json({ error: IntegrationNotFoundError });
+    if (!integration || !integration.klaviyo_api_key) {
+      logWarn(IntegrationNotFoundError, "POST /segments/klaviyo", { user_id, selected_segment });
+      return res.status(400).json({ error: IntegrationNotFoundError });
+    }
 
     const klaviyoSegmentProfiles = await getKlaviyoSegmentProfilesBySegmentId(
       selected_segment.id,
       integration.klaviyo_api_key
     );
 
-    const { data: newSegment, error } = await supabase
-      .from('segments')
-      .insert({
-        name: selected_segment.attributes.name,
-        type: "klaviyo",
-        user_id: user.id,
-        klaviyo_id: selected_segment.id,
-        demo: user.demo,
-      })
-      .select('id, demo')
-      .single();
-
-    if (error) {
-      console.error(error);
-      return res.status(500).json({ error: InternalServerError });
-    }
-
     let profilesToAdd = klaviyoSegmentProfiles.validProfiles.map((profile) => ({
-      id: profile.id,
+      klaviyo_id: profile.id,
       first_name: profile.attributes.first_name,
       last_name: profile.attributes.last_name,
       email: profile.attributes.email,
@@ -189,59 +270,63 @@ router.post('/klaviyo', async (req, res) => {
       city: profile.attributes.location.city,
       zip_code: profile.attributes.location.zip,
       country: profile.attributes.location.country,
-      segment_id: newSegment.id,
+      segment_id: 'temp', // Set to temporary value
       in_robinson: false,
       custom_variable: profile.attributes.properties.custom_variable || null,
     }));
 
+    // Step 2: Check profiles against Robinson list
     const profilesInRobinson = await returnProfilesInRobinson(profilesToAdd);
 
-    // filter the profiles in robinson into the profilesToAdd array and set in_robinson to true
-    profilesToAdd.forEach((profile) => {
-      if (
-        profilesInRobinson.some((robinsonProfile) => robinsonProfile === profile)
-      ) {
-        profile.in_robinson = true;
-      }
+    profilesToAdd = profilesToAdd.map((profile) => ({
+      ...profile,
+      in_robinson: profilesInRobinson.some((robinsonProfile) => robinsonProfile.email === profile.email),
+    }));
+
+    // Step 3: Perform database operations within a transaction
+    let newSegment: any;
+    await prisma.$transaction(async (transaction) => {
+      newSegment = await transaction.segment.create({
+        data: {
+          name: selected_segment.attributes.name,
+          type: 'klaviyo',
+          user_id: user.id,
+          klaviyo_id: selected_segment.id,
+          demo: user.demo,
+        },
+      });
+
+      // Update the profiles to have the new segment_id
+      profilesToAdd = profilesToAdd.map((profile) => ({
+        ...profile,
+        segment_id: newSegment.id,
+      }));
+
+      await transaction.profile.createMany({
+        data: profilesToAdd,
+      });
     });
 
-    const { error: profilesError } = await supabase
-      .from('profiles')
-      .insert([
-        ...profilesToAdd.map((profile) => ({
-          first_name: profile.first_name.toLowerCase(),
-          last_name: profile.last_name.toLowerCase(),
-          email: profile.email.toLowerCase(),
-          address: profile.address.toLowerCase(),
-          city: profile.city.toLowerCase(),
-          zip_code: profile.zip_code,
-          country: profile.country.toLowerCase(),
-          segment_id: newSegment.id,
-          in_robinson: profile.in_robinson,
-          custom_variable: profile.custom_variable || null,
-          demo: newSegment.demo,
-        })),
-      ]);
+    newSegment.profile_count = profilesToAdd.length;
+    newSegment.in_robinson_count = profilesToAdd.filter((profile) => profile.in_robinson).length;
 
-    if (profilesError) {
-      console.error(profilesError);
-      return res.status(500).json({ error: InternalServerError });
-    }
-
-    res.status(200).json({ success: SegmentImportedSuccess, skipped_profiles: klaviyoSegmentProfiles.skippedProfiles, reason: klaviyoSegmentProfiles.reason });
+    return res.status(200).json(newSegment);
   } catch (error: any) {
-    logtail.error(error);
-    res.status(500).json({ error: InternalServerError });
+    logError(error, { user_id, selected_segment });
+    return res.status(500).json({ error: InternalServerError });
   }
-})
+});
 
 // USED FOR SEGMENTS PAGE (to import a segment from CSV)
-router.post('/csv', (req, res) => {
+router.post('/csv', async (req, res) => {
   const { user_id } = req.body;
-  const form = formidable({ multiples: false, keepExtensions: true });
+
+  // Set max file size to 20MB
+  const form = formidable({ multiples: false, keepExtensions: true, maxFileSize: 20 * 1024 * 1024 }); // 20 MB
 
   form.parse(req, async (err, fields, files) => {
     if (err) {
+      logError(err, { user_id });
       return res.status(500).json({ error: ParsingError });
     }
 
@@ -254,79 +339,81 @@ router.post('/csv', (req, res) => {
     const user = await prisma.user.findUnique({
       where: { id: user_id },
     });
-    if (!user) return res.status(404).json({ error: UserNotFoundError });
+
+    if (!user) {
+      logWarn(UserNotFoundError, "POST /segments/csv", { user_id, segmentName });
+      return res.status(404).json({ error: UserNotFoundError });
+    }
 
     if (!files.file) {
+      logWarn(MissingRequiredParametersError, "POST /segments/csv", { user_id, segmentName });
       return res.status(400).json({ error: MissingRequiredParametersError });
     }
 
     const file = Array.isArray(files.file) ? files.file[0] : files.file;
-    fs.readFile(file.filepath, async (err, fileBuffer) => {
-      if (err) {
-        return res.status(500).json({ error: ParsingError });
+
+    try {
+      const fileBuffer = await fs.promises.readFile(file.filepath);
+      const fileText = new TextDecoder('UTF-8').decode(fileBuffer);
+
+      if (fileText.includes('�')) {
+        logWarn(ParsingError, "POST /segments/csv", { user_id, segmentName });
+        return res.status(400).json({ error: ParsingError });
       }
 
-      const fileText = new TextDecoder("UTF-8").decode(fileBuffer);
-      if (fileText.includes('�')) {
-        return res.status(400).json({
-          error: ParsingError
-        });
+      // Parse CSV text using PapaParse
+      const { data, errors, meta } = Papa.parse(fileText, {
+        header: true,
+        skipEmptyLines: true,
+      });
+
+      if (errors.length) {
+        logWarn(ParsingError, "POST /segments/csv", { user_id, segmentName });
+        return res.status(400).json({ error: ParsingError });
       }
 
       const expectedHeaders = [
-        "first_name",
-        "last_name",
-        "address",
-        "zip_code",
-        "city",
-        "email",
-        "country",
-        "custom_variable"
+        'first_name',
+        'last_name',
+        'address',
+        'zip_code',
+        'city',
+        'email',
+        'country',
+        'custom_variable',
       ];
 
-      const lines = fileText.split("\n");
-      const delimiter = detectDelimiter(lines[0]);
-      const headers = splitCSVLine(lines[0], delimiter);
-
-      const missingHeaders = expectedHeaders.filter(
-        (header) => !headers.includes(header)
-      );
-
-      if (missingHeaders.includes("custom_variable")) {
-        missingHeaders.splice(missingHeaders.indexOf("custom_variable"), 1);
+      const headers = meta.fields;
+      if (!headers) {
+        logWarn(ParsingError, "POST /segments/csv", { user_id, segmentName });
+        return res.status(400).json({ error: ParsingError });
       }
 
-      if (missingHeaders.length > 0) {
+      const requiredHeaders = expectedHeaders.filter(header => header !== 'custom_variable');
+      const missingRequiredHeaders = requiredHeaders.filter(header => !headers.includes(header));
+
+      if (missingRequiredHeaders.length > 0) {
+        logWarn(MISSING_HEADERS_ERROR(missingRequiredHeaders), "POST /segments/csv", { user_id, segmentName });
         return res.status(400).json({
-          error: `Ugyldig CSV format. Følgende kolonner mangler: ${missingHeaders.join(", ")}`
+          error: MISSING_HEADERS_ERROR(missingRequiredHeaders),
         });
       }
 
-      const headerIndices = new Map(
-        headers.map((header, index) => [header, index])
-      );
+      let rows = data.map((row: any) => ({
+        first_name: row.first_name?.toLowerCase(),
+        last_name: row.last_name?.toLowerCase(),
+        email: row.email?.toLowerCase(),
+        address: row.address?.toLowerCase(),
+        zip: row.zip_code?.toLowerCase(),
+        city: row.city?.toLowerCase(),
+        country: row.country?.toLowerCase(),
+        custom_variable: row.custom_variable?.toLowerCase() || null,
+      })).filter(row => Object.values(row).every(cell => cell !== '' && cell !== undefined));
 
-      let rows = lines.slice(1) // Start processing after the header line
-        .map((line) => splitCSVLine(line, delimiter))
-        .map((row) => ({
-          first_name: row[headerIndices.get("first_name") || 0]?.toLowerCase(),
-          last_name: row[headerIndices.get("last_name") || 0]?.toLowerCase(),
-          email: row[headerIndices.get("email") || 0]?.toLowerCase(),
-          address: row[headerIndices.get("address") || 0]?.toLowerCase(),
-          zip: row[headerIndices.get("zip_code") || 0]?.toLowerCase(),
-          city: row[headerIndices.get("city") || 0]?.toLowerCase(),
-          country: row[headerIndices.get("country") || 0]?.toLowerCase(),
-          custom_variable: headerIndices.has("custom_variable") ? row[headerIndices.get("custom_variable") || 0]?.toLowerCase() : null
-        }))
-        .filter((row) =>
-          Object.values(row).every((cell) => cell !== "" && cell !== undefined)
-        );
+      rows = rows.filter(row => ['denmark', 'danmark', 'sweden', 'sverige', 'germany', 'tyskland'].includes(row.country));
 
-      rows = rows.filter((row) => row.country === "denmark" || row.country === "danmark" || row.country === "sweden" || row.country === "sverige" || row.country === "germany" || row.country === "tyskland");
-
-      // Filter out duplicate emails
       const emailSet = new Set();
-      rows = rows.filter((profile) => {
+      rows = rows.filter(profile => {
         if (emailSet.has(profile.email)) {
           return false;
         } else {
@@ -335,9 +422,8 @@ router.post('/csv', (req, res) => {
         }
       });
 
-      // Filter out duplicate address + zip + first name + last name
       const uniqueProfilesSet = new Set();
-      rows = rows.filter((profile) => {
+      rows = rows.filter(profile => {
         const uniqueProfileKey = JSON.stringify({
           address: profile.address,
           zip: profile.zip,
@@ -353,23 +439,7 @@ router.post('/csv', (req, res) => {
         }
       });
 
-      const { data: newSegment, error: newSegmentError } = await supabase
-        .from('segments')
-        .insert({
-          name: segmentName,
-          type: "csv",
-          user_id: user.id,
-          demo: user.demo,
-        })
-        .select('id, demo')
-        .single();
-
-      if (newSegmentError) {
-        console.error(newSegmentError);
-        return res.status(500).json({ error: InternalServerError });
-      }
-
-      const profilesToAdd = rows.map((row) => ({
+      const profilesToAdd = rows.map(row => ({
         first_name: row.first_name,
         last_name: row.last_name,
         email: row.email,
@@ -377,7 +447,7 @@ router.post('/csv', (req, res) => {
         city: row.city,
         zip_code: row.zip,
         country: row.country,
-        segment_id: newSegment.id,
+        segment_id: 'temp',
         in_robinson: false,
         custom_variable: row.custom_variable
       }));
@@ -388,71 +458,160 @@ router.post('/csv', (req, res) => {
 
       const profilesInRobinson = await returnProfilesInRobinson(uniqueProfilesToAdd);
 
-      uniqueProfilesToAdd.forEach((profile) => {
-        if (profilesInRobinson.some((robinsonProfile) => robinsonProfile === profile)) {
+      uniqueProfilesToAdd.forEach(profile => {
+        if (profilesInRobinson.some(robinsonProfile => robinsonProfile.email === profile.email)) {
           profile.in_robinson = true;
         }
       });
 
-      const { error: profilesError } = await supabase
-        .from('profiles')
-        .insert([
-          ...uniqueProfilesToAdd.map((profile) => ({
-            first_name: profile.first_name.toLowerCase(),
-            last_name: profile.last_name.toLowerCase(),
-            email: profile.email.toLowerCase(),
-            address: profile.address.toLowerCase(),
-            city: profile.city.toLowerCase(),
-            zip_code: profile.zip_code.toLowerCase(),
-            country: profile.country.toLowerCase(),
-            segment_id: newSegment.id,
-            in_robinson: profile.in_robinson,
-            custom_variable: profile.custom_variable || null,
-            demo: newSegment.demo,
-          })),
-        ]);
+      await prisma.$transaction(async (prisma) => {
+        const newSegment = await prisma.segment.create({
+          data: {
+            name: segmentName,
+            type: 'csv',
+            user_id: user.id,
+            demo: user.demo,
+          }
+        });
 
-      if (profilesError) {
-        console.error(profilesError);
-        return res.status(500).json({ error: InternalServerError });
-      }
+        uniqueProfilesToAdd.forEach(profile => {
+          profile.segment_id = newSegment.id;
+        });
 
-      const { data: newSegmentWithProfiles, error: newSegmentWithProfilesError } = await supabase
-        .from('segments')
-        .select('*')
-        .eq('id', newSegment.id)
-        .single() as any;
+        await prisma.profile.createMany({
+          data: uniqueProfilesToAdd
+        });
 
-      if (newSegmentWithProfilesError) {
-        console.error(newSegmentWithProfilesError);
-        return res.status(500).json({ error: InternalServerError });
-      }
+        const newSegmentWithProfiles = await prisma.segment.findUnique({
+          where: { id: newSegment.id },
+        }) as any;
 
-      // add profile_count and in_robinson_count to the segment
-      const { count: profileCount, error: profileCountError } = await supabase
-        .from('profiles')
-        .select('id', { count: 'exact' })
-        .eq('segment_id', newSegment.id);
+        // Add profile_count and in_robinson_count to the segment
+        const profiles = await prisma.profile.findMany({
+          where: { segment_id: newSegment.id },
+        })
 
-      const { count: robinsonCount, error: robinsonCountError } = await supabase
-        .from('profiles')
-        .select('id', { count: 'exact' })
-        .eq('segment_id', newSegment.id)
-        .eq('in_robinson', true);
+        newSegmentWithProfiles.profile_count = profiles.length;
+        newSegmentWithProfiles.in_robinson_count = profiles.filter(profile => profile.in_robinson).length;
 
-      if (profileCountError || robinsonCountError) {
-        console.error(profileCountError || robinsonCountError);
-        return res.status(500).json({ error: InternalServerError });
-      }
-
-      newSegmentWithProfiles.profile_count = profileCount;
-      newSegmentWithProfiles.in_robinson_count = robinsonCount;
-      console.log(newSegmentWithProfiles);
-
-      return res.status(201).json(newSegmentWithProfiles);
-    });
+        return res.status(200).json(newSegmentWithProfiles);
+      });
+    } catch (error: any) {
+      logError(error, { user_id, segmentName });
+      return res.status(500).json({ error: InternalServerError });
+    }
   });
 });
+
+// USED FOR SEGMENTS PAGE (to create a segment from a webhook)
+router.post('/webhook', async (req, res) => {
+  try {
+    const { user_id, segment_name } = req.body;
+    if (!user_id || !segment_name) return res.status(400).json({ error: MissingRequiredParametersError });
+
+    const newSegment = await prisma.segment.create({
+      data: {
+        name: segment_name,
+        type: "webhook",
+        user_id,
+        demo: false,
+      },
+    }) as any;
+
+    // Add profile_count and in_robinson_count to the segment
+    const profiles = await prisma.profile.findMany({
+      where: { segment_id: newSegment.id },
+    });
+
+    newSegment.profile_count = profiles.length;
+    newSegment.in_robinson_count = profiles.filter(profile => profile.in_robinson).length;
+
+    return res.status(200).json(newSegment);
+  } catch (error) {
+    logError(error, { user_id: req.body.user_id });
+    return res.status(500).json({ error: InternalServerError });
+  }
+})
+
+// USED FOR SEGMENTS PAGE (to export a segment)
+router.get('/export/:id', async (req, res) => {
+
+  // Validate that the user has the rights to export the segment
+  const segment = await prisma.segment.findUnique({
+    where: { id: req.params.id },
+  });
+
+  if (!segment) {
+    logWarn(SegmentNotFoundError, "GET /segments/export/:id", { user_id: req.body.user_id });
+    return res.status(404).json({ error: SegmentNotFoundError });
+  }
+
+  if (segment.user_id !== req.body.user_id) {
+    logWarn(InsufficientRightsError, "GET /segments/export/:id", { user_id: req.body.user_id });
+    return res.status(403).json({ error: InsufficientRightsError });
+  }
+
+  try {
+    const { user_id } = req.body;
+    const { id } = req.params;
+    if (!user_id || !id) {
+      return res.status(400).json({ error: MissingRequiredParametersError });
+    }
+
+    const segment = await prisma.segment.findUnique({
+      where: {
+        id,
+        user_id,
+      },
+      include: {
+        profiles: true,
+      },
+    });
+    if (!segment) {
+      logWarn(SegmentNotFoundError, "GET /segments/export/:id", { user_id, id });
+      return res.status(404).json({ error: SegmentNotFoundError });
+    }
+
+    const headers = [
+      "id",
+      "first_name",
+      "last_name",
+      "email",
+      "address",
+      "city",
+      "country",
+      "zip_code",
+      "in_robinson",
+      "custom_variable"
+    ];
+    let csvContent = headers.join(",") + "\n";
+
+    // Create CSV content
+    segment.profiles.forEach((profile: Profile) => {
+      const row = [
+        generateUniqueFiveDigitId(),
+        `"${profile.first_name}"`,
+        `"${profile.last_name}"`,
+        `"${profile.email}"`,
+        `"${profile.address}"`,
+        `"${profile.city}"`,
+        `"${profile.country}"`,
+        `"${profile.zip_code}"`,
+        `"${profile.in_robinson ? "Ja" : "Nej"}"`,
+        `"${profile.custom_variable}"`,
+      ];
+      csvContent += row.join(",") + "\n";
+    });
+
+    // Return CSV
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename=${segment.name}.csv`);
+    res.send(csvContent);
+  } catch (error) {
+    logError(error, { user_id: req.body.user_id });
+    return res.status(500).json({ error: InternalServerError });
+  }
+})
 
 router.get('/admin', async (req, res) => {
   const segments = await prisma.segment.findMany({
@@ -463,81 +622,6 @@ router.get('/admin', async (req, res) => {
   });
 
   return res.status(200).json(segments);
-})
-
-router.put('/:id', async (req, res) => {
-  const user_id = req.body.user_id;
-  const newName = req.body.segmentName;
-  if (!user_id || !newName) return res.status(400).json({ error: MissingRequiredParametersError });
-
-  const segment = await prisma.segment.findUnique({
-    where: { id: req.params.id },
-  });
-
-  if (!segment) return res.status(404).json({ error: SegmentNotFoundError });
-
-  if (segment.user_id !== user_id) return res.status(403).json({ error: InsufficientRightsError });
-
-  await prisma.segment.update({
-    where: { id: req.params.id },
-    data: { name: newName },
-  });
-
-  res.json({ success: SegmentUpdatedSuccess });
-})
-
-// USED FOR SEGMENTS PAGE (to export a segment)
-router.get('/export/:id', async (req, res) => {
-  const { user_id } = req.body;
-  const { id } = req.params;
-  if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
-
-  const segment = await prisma.segment.findUnique({
-    where: {
-      id,
-      user_id,
-    },
-    include: {
-      profiles: true,
-    },
-  });
-  if (!segment) return res.status(404).json({ error: SegmentNotFoundError });
-
-  const headers = [
-    "id",
-    "first_name",
-    "last_name",
-    "email",
-    "address",
-    "city",
-    "country",
-    "zip_code",
-    "in_robinson",
-    "custom_variable"
-  ];
-  let csvContent = headers.join(",") + "\n";
-
-  // Create CSV content
-  segment.profiles.forEach((profile: Profile) => {
-    const row = [
-      generateUniqueFiveDigitId(),
-      `"${profile.first_name}"`,
-      `"${profile.last_name}"`,
-      `"${profile.email}"`,
-      `"${profile.address}"`,
-      `"${profile.city}"`,
-      `"${profile.country}"`,
-      `"${profile.zip_code}"`,
-      `"${profile.in_robinson ? "Ja" : "Nej"}"`,
-      `"${profile.custom_variable}"`,
-    ];
-    csvContent += row.join(",") + "\n";
-  });
-
-  // Return CSV
-  res.setHeader("Content-Type", "text/csv");
-  res.setHeader("Content-Disposition", `attachment; filename=${segment.name}.csv`);
-  res.send(csvContent);
 })
 
 router.get('/klaviyo', async (req, res) => {
@@ -582,30 +666,6 @@ router.get('/klaviyo', async (req, res) => {
   }
 
   return res.status(200).json({ segments });
-})
-
-// USED FOR SEGMENTS PAGE (to create a segment from a webhook)
-router.post('/webhook', async (req, res) => {
-  const { user_id, segment_name } = req.body;
-  if (!user_id || !segment_name) return res.status(400).json({ error: MissingRequiredParametersError });
-
-  const { data: newSegment, error: newSegmentError } = await supabase
-    .from('segments')
-    .insert({
-      name: segment_name,
-      type: "webhook",
-      user_id,
-      demo: false,
-    })
-    .select('*')
-    .single();
-
-  if (newSegmentError) {
-    console.error(newSegmentError);
-    return res.status(500).json({ error: InternalServerError });
-  }
-
-  return res.status(200).json(newSegment);
 })
 
 export default router;

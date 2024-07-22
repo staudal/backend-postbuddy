@@ -1,5 +1,5 @@
 export const UserAlreadyExistsError = 'Der findes allerede en bruger med denne e-mail';
-export const InternalServerError = 'Der opstod en fejl. Vi arbejder på at løse problemet';
+export const InternalServerError = 'Noget gik galt. Vi har modtaget en notifikation og arbejder på at løse problemet!';
 export const UserNotFoundError = 'Brugeren findes ikke';
 export const DesignNotFoundError = 'Designet findes ikke';
 export const CampaignNotFoundError = 'Kampagnen findes ikke';
@@ -27,6 +27,8 @@ export const PasswordResetTokenExpiredError = 'Linket er udløbet. Bed om et nyt
 export const ParsingError = 'Der opstod en fejl under indlæsningen af data';
 export const InvalidJwtTokenError = 'Ugyldigt token';
 export const SceneNotFoundError = 'Scenen findes ikke';
+export const ExceededMaxFileSizeError = 'CSV-filen kan maksimalt være 20 MB'
+export const MISSING_HEADERS_ERROR = (headers: string[]) => `Ugyldig CSV format. Følgende kolonner mangler: ${headers.join(', ')}`;
 
 export class ErrorWithStatusCode extends Error {
   statusCode: number;

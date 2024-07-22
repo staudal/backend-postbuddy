@@ -226,7 +226,6 @@ router.get('/:id/scene', async (req, res) => {
       return res.status(200).send(bodyString);
     });
   } catch (error: any) {
-    console.log(error);
     logtail.error("Error fetching scene in editor", error);
     res.status(500).json({ error: InternalServerError });
   }
