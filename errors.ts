@@ -26,7 +26,7 @@ export const PasswordTooShortError = 'Adgangskoden skal være mindst 8 tegn lang
 export const PasswordResetTokenExpiredError = 'Linket er udløbet. Bed om et nyt link, hvis du vil nulstille din adgangskode.'
 export const ParsingError = 'Der opstod en fejl under indlæsningen af data';
 export const InvalidJwtTokenError = 'Ugyldigt token';
-export const SceneNotFoundError = 'Scenen findes ikke';
+export const SceneNotFoundError = 'Du skal først gemme designet, før du kan eksportere det';
 export const ExceededMaxFileSizeError = 'CSV-filen kan maksimalt være 20 MB'
 export const MISSING_HEADERS_ERROR = (headers: string[]) => `Ugyldig CSV format. Følgende kolonner mangler: ${headers.join(', ')}`;
 export const PROFILE_NOT_FOUND_ERROR = "Profilen findes ikke";

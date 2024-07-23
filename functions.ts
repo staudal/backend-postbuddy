@@ -912,7 +912,6 @@ export function generateIdText(engine: CreativeEngine, profile: Profile, idText:
 }
 
 export async function generatePdf(profiles: Profile[], designBlob: string) {
-  let profilesGenerated = 0;
   try {
     const mergedPdf = await PDFDocument.create();
     await CreativeEngine.init(config).then(async (engine) => {
@@ -931,8 +930,6 @@ export async function generatePdf(profiles: Profile[], designBlob: string) {
         const pdf = await PDFDocument.load(pdfBuffer);
         const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
         copiedPages.forEach((page) => mergedPdf.addPage(page));
-        logtail.info(`Generated pdf #${profilesGenerated + 1} out of ${profiles.length}`);
-        profilesGenerated++;
       }
     });
     const pdfArray = await mergedPdf.save();

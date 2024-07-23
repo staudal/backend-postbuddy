@@ -204,7 +204,7 @@ router.delete('/profile/:id', authenticateToken, async (req, res) => {
   });
 
   if (!profile) {
-    logWarn(PROFILE_NOT_FOUND_ERROR, "DELETE /segments/:id", { user_id: req.body.user_id });
+    logWarn(PROFILE_NOT_FOUND_ERROR, "DELETE /segments/profile/:id", { user_id: req.body.user_id });
     return res.status(404).json({ error: SegmentNotFoundError });
   }
 
