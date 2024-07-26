@@ -316,6 +316,7 @@ export const buildProfileWhereClause = (allOrder: PrismaOrder, segmentId: string
   const discountCodes = allOrder.discount_codes;
   const address = getAddressComponents(addressFull);
   const lastWordOfLastName = lastName.split(" ").pop() || "";
+  const createdAt = allOrder.created_at;
 
   return {
     OR: [
@@ -324,6 +325,7 @@ export const buildProfileWhereClause = (allOrder: PrismaOrder, segmentId: string
       { segment: { campaign: { discount_codes: { hasSome: discountCodes } } } },
     ],
     letter_sent: true,
+    letter_sent_at: { lte: createdAt },
     segment_id: segmentId,
   };
 };

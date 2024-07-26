@@ -15,7 +15,7 @@ router.get('/new', async (req, res) => {
   });
   if (!user) return res.status(404).json({ error: UserNotFoundError });
 
-  const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+  const STRIPE_SECRET_KEY = process.env.NODE_ENV === "production" ? process.env.STRIPE_SECRET_KEY : process.env.STRIPE_SECRET_KEY_TEST;
 
   if (STRIPE_SECRET_KEY == null) {
     return res.status(500).json({ error: InternalServerError });
@@ -61,7 +61,7 @@ router.get('/portal', async (req, res) => {
   });
   if (!subscription) return res.status(404).json({ error: MissingSubscriptionError });
 
-  const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+  const STRIPE_SECRET_KEY = process.env.NODE_ENV === "production" ? process.env.STRIPE_SECRET_KEY : process.env.STRIPE_SECRET_KEY_TEST;
   if (!STRIPE_SECRET_KEY) {
     throw new Error("Stripe secret key not found");
   }

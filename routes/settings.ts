@@ -5,24 +5,24 @@ import { MissingRequiredParametersError } from '../errors';
 const router = Router();
 
 router.put('/', async (req, res) => {
-  const { user_id, firstName, lastName, company, address, zip, city, country, bufferDays } = req.body;
+  const { user_id, first_name, last_name, company, address, zip_code, city, country, buffer_days } = req.body;
   if (!user_id) return MissingRequiredParametersError;
 
-  await prisma.user.update({
+  const newUser = await prisma.user.update({
     where: { id: user_id },
     data: {
-      first_name: firstName,
-      last_name: lastName,
+      first_name,
+      last_name,
       company,
       address,
-      zip_code: zip,
+      zip_code,
       city,
       country,
-      buffer_days: bufferDays,
+      buffer_days,
     },
   });
 
-  return res.status(200).json({ success: "Brugeroplysningerne er blevet opdateret" });
+  return res.status(200).json(newUser);
 })
 
 export default router;

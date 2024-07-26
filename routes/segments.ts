@@ -16,10 +16,20 @@ router.get('/', authenticateToken, async (req, res) => {
   try {
     const userId = req.body.user_id;
 
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      logWarn(UserNotFoundError, "GET /segments", { user_id: req.body.user_id });
+      return res.status(404).json({ error: UserNotFoundError });
+    }
+
     // Fetch all segments for the user
     const segments = await prisma.segment.findMany({
       where: {
         user_id: userId,
+        demo: user.demo,
       },
       orderBy: {
         created_at: 'desc',
@@ -127,6 +137,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
   });
 
   segment.profile_count = profileCount;
+  segment.connected = !!segment.campaign;
 
   return res.status(200).json(segment);
 })
@@ -144,6 +155,7 @@ router.get('/:id/profiles', authenticateToken, async (req, res) => {
     },
     skip: offset,
     take: limit,
+    distinct: ['id'], // Ensure uniqueness of profiles
     orderBy: {
       [sort[0]]: sort[1],
     },
@@ -208,6 +220,29 @@ router.delete('/profile/:id', authenticateToken, async (req, res) => {
     return res.status(404).json({ error: SegmentNotFoundError });
   }
 
+  // Validate that the segment is not connected to a campaign
+  const segment = await prisma.segment.findUnique({
+    where: { id: profile.segment_id },
+    include: {
+      campaign: true,
+    }
+  });
+
+  if (!segment) {
+    logWarn(SegmentNotFoundError, "DELETE /segments/profile/:id", { user_id: req.body.user_id });
+    return res.status(404).json({ error: SegmentNotFoundError });
+  }
+
+  if (segment.user_id !== req.body.user_id) {
+    logWarn(InsufficientRightsError, "DELETE /segments/profile/:id", { user_id: req.body.user_id });
+    return res.status(403).json({ error: InsufficientRightsError });
+  }
+
+  if (segment.campaign) {
+    logWarn("Cannot delete a profile in a segment connected to a campaign", "DELETE /segments/profile/:id", { user_id: req.body.user_id });
+    return res.status(400).json({ error: "Cannot delete a profile in a segment connected to a campaign" });
+  }
+
   try {
     await prisma.$transaction(async (prisma) => {
       await prisma.profile.delete({
@@ -264,6 +299,29 @@ router.put('/profile/:id', authenticateToken, async (req, res) => {
   if (!profile) {
     logWarn(PROFILE_NOT_FOUND_ERROR, "PUT /segments/profile/:id", { user_id: req.body.user_id });
     return res.status(404).json({ error: PROFILE_NOT_FOUND_ERROR });
+  }
+
+  // Validate that the segment is not connected to a campaign
+  const segment = await prisma.segment.findUnique({
+    where: { id: profile.segment_id },
+    include: {
+      campaign: true,
+    }
+  });
+
+  if (!segment) {
+    logWarn(SegmentNotFoundError, "PUT /segments/profile/:id", { user_id: req.body.user_id });
+    return res.status(404).json({ error: SegmentNotFoundError });
+  }
+
+  if (segment.user_id !== req.body.user_id) {
+    logWarn(InsufficientRightsError, "PUT /segments/profile/:id", { user_id: req.body.user_id });
+    return res.status(403).json({ error: InsufficientRightsError });
+  }
+
+  if (segment.campaign) {
+    logWarn("Cannot update a profile in a segment connected to a campaign", "PUT /segments/profile/:id", { user_id: req.body.user_id });
+    return res.status(400).json({ error: "Cannot update a profile in a segment connected to a campaign" });
   }
 
   try {
@@ -569,12 +627,21 @@ router.post('/webhook', async (req, res) => {
     const { user_id, segment_name } = req.body;
     if (!user_id || !segment_name) return res.status(400).json({ error: MissingRequiredParametersError });
 
+    const user = await prisma.user.findUnique({
+      where: { id: user_id },
+    });
+
+    if (!user) {
+      logWarn(UserNotFoundError, "POST /segments/webhook", { user_id, segment_name });
+      return res.status(404).json({ error: UserNotFoundError });
+    }
+
     const newSegment = await prisma.segment.create({
       data: {
         name: segment_name,
         type: "webhook",
         user_id,
-        demo: false,
+        demo: user.demo,
       },
     }) as any;
 

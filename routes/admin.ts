@@ -2,10 +2,8 @@ import { Router } from 'express';
 import { prisma } from '../app';
 import { InsufficientRightsError, MissingRequiredParametersError, UserAlreadyExistsError, UserNotFoundError } from '../errors';
 import argon2 from 'argon2';
-import jwt from 'jsonwebtoken';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
 router.get('/users', async (req, res) => {
   const { user_id } = req.body;
@@ -116,24 +114,5 @@ router.put(`/users/:id`, async (req, res) => {
 
   return res.status(200).json({ success: 'Bruger opdateret' });
 })
-
-router.post('/impersonate', async (req, res) => {
-  const { userId } = req.body;
-  if (!userId) return res.status(400).json({ error: MissingRequiredParametersError });
-
-  // Find the user to impersonate
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) return res.status(404).json({ error: UserNotFoundError });
-
-  // Create a JWT token for the impersonated user
-  const token = jwt.sign(
-    { userId: user.id, email: user.email, role: user.role },
-    JWT_SECRET,
-    { expiresIn: '24h' }
-  );
-
-  res.status(200).json({ success: 'Du er nu logget ind', token });
-});
-
 
 export default router;

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { prisma } from '../app';
+import { logWarn, prisma } from '../app';
 import { MissingRequiredParametersError, UserNotFoundError } from '../errors';
 
 const router = Router();
@@ -24,9 +24,21 @@ router.get('/', async (req, res) => {
       demo: true,
       buffer_days: true,
     },
+  }) as any;
+
+  // add is_subscribed to user
+  const subscription = await prisma.subscription.findFirst({
+    where: { user_id },
   });
 
+  if (subscription) {
+    user.is_subscribed = true;
+  } else {
+    user.is_subscribed = false;
+  }
+
   if (!user) {
+    logWarn(UserNotFoundError, "GET /user", { user_id });
     return res.status(404).json({ error: UserNotFoundError });
   }
 

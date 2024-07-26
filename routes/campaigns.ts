@@ -1,22 +1,26 @@
 import { Router } from 'express';
-import { logtail, prisma } from '../app';
-import { CampaignNotFoundError, DesignNotFoundError, FailedToBillUserError, FailedToCreateCampaignError, FailedToGeneratePdfError, FailedToScheduleCampaignError, FailedToSendPdfToPrintPartnerError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
-import { billUserForLettersSent, generateCsvAndSendToPrintPartner, generatePdf, generateTestDesign, periodicallySendLetters, sendLettersForNonDemoUser, sendPdfToPrintPartner } from '../functions';
-import { Campaign, Order, OrderProfile, Profile } from '@prisma/client';
-import { testProfile } from '../constants';
+import { logError, logtail, logWarn, prisma } from '../app';
+import { CampaignNotFoundError, DesignNotFoundError, FailedToBillUserError, FailedToCreateCampaignError, FailedToGeneratePdfError, FailedToSendPdfToPrintPartnerError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
+import { billUserForLettersSent, generateCsvAndSendToPrintPartner, generatePdf, periodicallySendLetters, sendPdfToPrintPartner } from '../functions';
+import { Campaign } from '@prisma/client';
+import { pricePerLetter, testProfile } from '../constants';
+import { authenticateToken } from './middleware';
 
 const router = Router();
 
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   const user_id = req.body.user_id;
-  if (!user_id) return res.status(400).json({ error: 'MissingRequiredParametersError' });
+  if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
   try {
     const dbUser = await prisma.user.findUnique({
       where: { id: user_id },
     });
 
-    if (!dbUser) return res.status(404).json({ error: 'UserNotFoundError' });
+    if (!dbUser) {
+      logWarn(UserNotFoundError, "GET /campaigns", { user_id });
+      return res.status(404).json({ error: UserNotFoundError });
+    }
 
     // Fetch campaigns including necessary aggregation data
     const campaigns = await prisma.campaign.findMany({
@@ -27,15 +31,23 @@ router.get('/', async (req, res) => {
             profiles: {
               select: {
                 letter_sent: true,
+                letter_sent_at: true,
                 orders: {
                   select: {
                     order: {
                       select: {
                         amount: true,
+                        created_at: true,
                       }
                     },
                   }
                 }
+              },
+              where: {
+                letter_sent: true,
+                letter_sent_at: {
+                  not: null,
+                },
               }
             }
           }
@@ -50,45 +62,59 @@ router.get('/', async (req, res) => {
     const campaignData = campaigns.map((campaign) => {
       const lettersSentCount = campaign.segment.profiles.filter(profile => profile.letter_sent).length;
       const campaignRevenue = campaign.segment.profiles.reduce((acc, profile) => {
-        return acc + profile.orders.reduce((acc, orderProfile) => {
-          return acc + (orderProfile.order.amount || 0);
+        const profileRevenue = profile.orders.reduce((acc, orderProfile) => {
+          if (profile.letter_sent_at) {
+            const orderDate = new Date(orderProfile.order.created_at);
+            const letterSentDate = new Date(profile.letter_sent_at);
+
+            // Only include orders where the order date is after the letter sent date
+            if (orderDate > letterSentDate) {
+              return acc + (orderProfile.order.amount || 0);
+            }
+          }
+          return acc;
         }, 0);
+
+        return acc + profileRevenue;
       }, 0);
+
+      const adSpend = lettersSentCount * pricePerLetter;
+      const roas = campaignRevenue / adSpend;
 
       return {
         ...campaign,
-        lettersSent: lettersSentCount,
-        campaignRevenue,
+        roas,
+        letters_sent: lettersSentCount,
+        campaign_revenue: campaignRevenue,
       };
     });
 
     return res.json(campaignData);
   } catch (error: any) {
-    logtail.error(`Failed to fetch campaigns for user ${user_id}: ${error.message}`);
+    logError(error, { user_id });
     return res.status(500).json({ InternalServerError });
   }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticateToken, async (req, res) => {
   const user_id = req.body.user_id;
   const id = req.params.id;
   if (!user_id || !id) return res.status(400).json({ error: MissingRequiredParametersError });
 
   const campaign = await prisma.campaign.findUnique({
     where: { id: id },
-    include: {
+    select: {
+      id: true,
+      name: true,
+      start_date: true,
+      status: true,
+      type: true,
       segment: {
-        include: {
+        select: {
+          id: true,
+          name: true,
           profiles: {
             select: {
-              id: true,
-              first_name: true,
-              last_name: true,
-              address: true,
-              zip_code: true,
-              city: true,
-              email: true,
-              country: true,
               letter_sent: true,
               letter_sent_at: true,
               orders: {
@@ -97,62 +123,145 @@ router.get('/:id', async (req, res) => {
                     select: {
                       amount: true,
                       created_at: true,
-                    }
+                    },
                   },
-                  profile: {
-                    select: {
-                      letter_sent_at: true,
-                    }
-                  }
-                }
-              }
+                },
+              },
+            },
+            where: {
+              letter_sent: true,
             }
-          }
-        }
+          },
+        },
       },
-      design: true,
+      design: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
     },
   });
 
   if (!campaign) return res.status(404).json({ error: CampaignNotFoundError });
 
-  const lettersSentCount = campaign.segment.profiles.filter(profile => profile.letter_sent).length;
+  let letters_sent = 0;
+  let campaign_revenue = 0;
+  let totalDaysToFirstPurchase = 0;
+  let conversions = 0;
+  let profilesWithPurchase = 0;
 
-  const profilesWithTotalAmount = campaign.segment.profiles.map(profile => {
-    const totalAmount = profile.orders.reduce((acc, orderProfile) => {
-      return acc + (orderProfile.order.amount || 0);
-    }, 0);
-    return { ...profile, totalAmount };
+  for (const profile of campaign.segment.profiles) {
+    if (profile.letter_sent) letters_sent++;
+    const orders = profile.orders.filter(order => (
+      profile.letter_sent_at !== null && order.order.created_at > profile.letter_sent_at && order.order.amount > 0
+    ));
+    if (orders.length > 0) {
+      profilesWithPurchase++;
+      conversions++;
+      if (profile.letter_sent_at) {
+        totalDaysToFirstPurchase += (new Date(orders[0].order.created_at).getTime() - new Date(profile.letter_sent_at).getTime()) / (1000 * 3600 * 24);
+      } else {
+        totalDaysToFirstPurchase += 0;
+      }
+      campaign_revenue += orders.reduce((acc, order) => acc + order.order.amount, 0);
+    }
+  }
+
+  // Calculate the ad spend for the campaign
+  const ad_spend = letters_sent ? letters_sent * pricePerLetter : 0;
+
+  // Calculate the return on ad spend for the campaign
+  const roas = ad_spend ? campaign_revenue / ad_spend : 0;
+
+  const avg_days_to_first_purchase = profilesWithPurchase ? totalDaysToFirstPurchase / profilesWithPurchase : 0;
+
+  const updatedCampaign = {
+    id: campaign.id,
+    name: campaign.name,
+    start_date: campaign.start_date,
+    design: campaign.design,
+    status: campaign.status,
+    type: campaign.type,
+    segment: {
+      id: campaign.segment.id,
+      name: campaign.segment.name,
+    },
+    campaign_revenue,
+    ad_spend,
+    roas,
+    letters_sent,
+    conversions,
+    avg_days_to_first_purchase,
+    profile_count: letters_sent,
+  };
+
+  return res.json(updatedCampaign);
+});
+
+// USED FOR CAMPAIGN DETAILS PAGE (to fetch all profiles in a campaign)
+router.get('/:id/profiles', authenticateToken, async (req, res) => {
+  const page = req.query.page ? parseInt(req.query.page as string) : 1;
+  const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+  const offset = (page - 1) * limit;
+  const sort = req.query.sort ? (req.query.sort as any).split(':') : ['created_at', 'desc'];
+
+  const campaignId = req.params.id;
+
+  // Fetch all profiles for sorting
+  const allProfiles = await prisma.profile.findMany({
+    where: {
+      segment: {
+        campaign: {
+          id: campaignId,
+        },
+      },
+    },
+    include: {
+      orders: {
+        select: {
+          order: {
+            select: {
+              amount: true,
+              created_at: true,
+            },
+          },
+        },
+      },
+    },
   });
 
-  // Sort profiles based on total order amount in descending order
-  profilesWithTotalAmount.sort((a, b) => b.totalAmount - a.totalAmount);
+  // Process profiles to add necessary fields
+  const processedProfiles = allProfiles.map((profile: any) => {
+    const full_name = `${profile.first_name} ${profile.last_name}`;
 
-  const campaignRevenue = profilesWithTotalAmount.reduce((acc, profile) => acc + profile.totalAmount, 0);
+    const revenue = (profile.orders || []).filter((order: any) => (
+      profile.letter_sent_at !== null && order.order.created_at > profile.letter_sent_at && order.order.amount > 0
+    )).reduce((acc: number, order: any) => acc + order.order.amount, 0);
 
-  // add "daysUntilFirstPurchase" to each profile
-  profilesWithTotalAmount.forEach((profile: any) => {
-    profile.fullName = `${profile.first_name} ${profile.last_name}`;
-    const firstOrder = profile.orders.find((order: any) => order.profile.letter_sent_at !== null);
-    if (firstOrder && firstOrder.profile.letter_sent_at !== null) {
-      const daysUntilFirstPurchase = Math.floor((firstOrder.order.created_at.getTime() - firstOrder.profile.letter_sent_at.getTime()) / (1000 * 60 * 60 * 24));
-      profile.daysUntilFirstPurchase = daysUntilFirstPurchase;
+    return {
+      ...profile,
+      full_name,
+      revenue,
+    };
+  });
+
+  // Sort the profiles
+  const sortedProfiles = processedProfiles.sort((a, b) => {
+    if (sort[1] === 'asc') {
+      return a[sort[0]] > b[sort[0]] ? 1 : -1;
+    } else {
+      return a[sort[0]] < b[sort[0]] ? 1 : -1;
     }
   });
 
-  // add total number of profiles that have made a purchase
-  const profilesWithPurchase = profilesWithTotalAmount.filter(profile => profile.orders.length > 0).length;
+  // Paginate the sorted profiles
+  const paginatedProfiles = sortedProfiles.slice(offset, offset + limit);
 
-  return res.json({
-    ...campaign,
-    segment: { ...campaign.segment, profiles: profilesWithTotalAmount },
-    lettersSent: lettersSentCount,
-    campaignRevenue,
-    profilesWithPurchase,
-  });
-})
+  return res.status(200).json(paginatedProfiles);
+});
 
-router.post('/', async (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
   const { user_id, name, type, segment_id, design_id, discountCodes, start_date } = req.body;
   if (!name || !user_id || !type || !segment_id || !design_id || !discountCodes) return res.status(400).json({ error: MissingRequiredParametersError });
 
@@ -200,7 +309,7 @@ router.post('/', async (req, res) => {
   return res.status(201).json({ success: "Kampagnen er blevet oprettet og afventer afsendelse", campaign });
 })
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticateToken, async (req, res) => {
   const { user_id, status, design_id } = req.body;
   const id = req.params.id;
   if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
@@ -223,7 +332,7 @@ router.put('/:id', async (req, res) => {
   return res.status(200).json({ success: "Kampagnen er blevet opdateret" });
 })
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateToken, async (req, res) => {
   const { user_id } = req.body;
   const id = req.params.id;
   if (!user_id || !id) return res.status(400).json({ error: MissingRequiredParametersError });
@@ -242,11 +351,11 @@ router.delete('/:id', async (req, res) => {
   return res.status(200).json({ success: "Kampagnen er blevet slettet" });
 })
 
-router.get('/force-send-letters', async (req, res) => {
+router.get('/force-send-letters', authenticateToken, async (req, res) => {
   await periodicallySendLetters();
 })
 
-router.post('/test-letter', async (req, res) => {
+router.post('/test-letter', authenticateToken, async (req, res) => {
   const { user_id, design_id } = req.body;
   if (!user_id || !design_id) return res.status(400).json({ error: MissingRequiredParametersError });
 
