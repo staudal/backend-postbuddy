@@ -1,33 +1,41 @@
-import { PrismaClient, Profile, User } from '@prisma/client';
-import { KlaviyoSegmentProfile, Order, ProfileToAdd } from './types';
-import { Order as PrismaOrder } from '@prisma/client';
-import Stripe from 'stripe';
-import { ErrorWithStatusCode, FailedToBillUserError, FailedToGeneratePdfError, FailedToSendPdfToPrintPartnerError, FailedToUpdateProfilesToSentError, MissingSubscriptionError } from './errors';
-import CreativeEngine, * as CESDK from '@cesdk/node';
-import { MimeType } from '@cesdk/node';
-import { PDFDocument } from 'pdf-lib';
+import { PrismaClient, Profile, User } from "@prisma/client";
+import { KlaviyoSegmentProfile, Order, ProfileToAdd } from "./types";
+import { Order as PrismaOrder } from "@prisma/client";
+import Stripe from "stripe";
+import {
+  ErrorWithStatusCode,
+  FailedToBillUserError,
+  FailedToGeneratePdfError,
+  FailedToSendPdfToPrintPartnerError,
+  FailedToUpdateProfilesToSentError,
+  MissingSubscriptionError,
+} from "./errors";
+import CreativeEngine, * as CESDK from "@cesdk/node";
+import { MimeType } from "@cesdk/node";
+import { PDFDocument } from "pdf-lib";
 import Client from "ssh2-sftp-client";
-import { createHmac } from 'node:crypto';
-import { config } from './constants';
-import { logtail } from './app';
-import { subDays } from 'date-fns';
-import { S3Client } from '@aws-sdk/client-s3';
+import { createHmac } from "node:crypto";
+import { config } from "./constants";
+import { logtail } from "./app";
+import { subDays } from "date-fns";
+import { S3Client } from "@aws-sdk/client-s3";
 
 export const prisma = new PrismaClient({
   transactionOptions: {
     timeout: 10000,
-  }
-})
+  },
+});
 
 export const s3 = new S3Client({
   forcePathStyle: true,
-  region: 'eu-central-1',
-  endpoint: 'https://rkjrflfwfqhhpwafimbe.supabase.co/storage/v1/s3',
+  region: "eu-central-1",
+  endpoint: "https://rkjrflfwfqhhpwafimbe.supabase.co/storage/v1/s3",
   credentials: {
-    accessKeyId: '317fb0867435e048caf40891fe400b38',
-    secretAccessKey: '8e2d04c347e7c863edeebb42a1e7db32bae73d6ee922103b24e61d2b7d5d4b50',
-  }
-})
+    accessKeyId: "317fb0867435e048caf40891fe400b38",
+    secretAccessKey:
+      "8e2d04c347e7c863edeebb42a1e7db32bae73d6ee922103b24e61d2b7d5d4b50",
+  },
+});
 
 export const loadUserWithShopifyIntegration = async (userId: string) => {
   return await prisma.user.findUnique({
@@ -41,7 +49,12 @@ export const loadUserWithShopifyIntegration = async (userId: string) => {
   });
 };
 
-export const getBulkOperationUrl = async (shop: string, token: string, apiId: string, userId: string) => {
+export const getBulkOperationUrl = async (
+  shop: string,
+  token: string,
+  apiId: string,
+  userId: string,
+) => {
   const response = await fetch(
     `https://${shop}.myshopify.com/admin/api/2021-10/graphql.json`,
     {
@@ -68,7 +81,10 @@ export const getBulkOperationUrl = async (shop: string, token: string, apiId: st
   const data: any = await response.json();
 
   if (!response.ok || !data.data?.node?.url) {
-    throw new ErrorWithStatusCode(`Failed to fetch bulk operation URL for user with id ${userId}: ${data.errors}`, 500);
+    throw new ErrorWithStatusCode(
+      `Failed to fetch bulk operation URL for user with id ${userId}: ${data.errors}`,
+      500,
+    );
   }
 
   return data.data.node.url;
@@ -78,14 +94,17 @@ export const fetchBulkOperationData = async (url: string, userId: string) => {
   const orderResponse = await fetch(url);
 
   if (!orderResponse.ok || !orderResponse.body) {
-    throw new ErrorWithStatusCode(`Failed to fetch bulk operation data for user with id ${userId}: ${orderResponse.statusText}`, 500);
+    throw new ErrorWithStatusCode(
+      `Failed to fetch bulk operation data for user with id ${userId}: ${orderResponse.statusText}`,
+      500,
+    );
   }
 
   try {
     const reader = orderResponse.body.getReader();
     const decoder = new TextDecoder();
     let orders: Order[] = [];
-    let responseBody = '';
+    let responseBody = "";
 
     while (true) {
       const { done, value } = await reader.read();
@@ -94,7 +113,7 @@ export const fetchBulkOperationData = async (url: string, userId: string) => {
       if (done) break;
     }
 
-    const lines = responseBody.trim().split('\n');
+    const lines = responseBody.trim().split("\n");
 
     for (const line of lines) {
       if (line) {
@@ -105,7 +124,10 @@ export const fetchBulkOperationData = async (url: string, userId: string) => {
 
     return orders;
   } catch (error) {
-    throw new ErrorWithStatusCode(`Failed to read bulk operation data for user with id ${userId}: ${error}`, 500);
+    throw new ErrorWithStatusCode(
+      `Failed to read bulk operation data for user with id ${userId}: ${error}`,
+      500,
+    );
   }
 };
 
@@ -114,7 +136,9 @@ export const saveOrders = async (user: User, shopifyOrders: Order[]) => {
 
   try {
     // Map of order IDs to shopify orders for quick lookup
-    const shopifyOrderMap = new Map(shopifyOrders.map(order => [order.id, order]));
+    const shopifyOrderMap = new Map(
+      shopifyOrders.map((order) => [order.id, order]),
+    );
 
     // Split orders into batches
     const batches = [];
@@ -123,87 +147,100 @@ export const saveOrders = async (user: User, shopifyOrders: Order[]) => {
     }
 
     // Process each batch concurrently
-    await Promise.all(batches.map(async (batch) => {
-      const orderIds = batch.map(order => order.id);
+    await Promise.all(
+      batches.map(async (batch) => {
+        const orderIds = batch.map((order) => order.id);
 
-      // Use a transaction to handle all operations in the batch
-      await prisma.$transaction(async (prisma) => {
-        // Fetch existing orders in a single query
-        const existingDbOrders = await prisma.order.findMany({
-          where: {
-            user_id: user.id,
-            order_id: { in: orderIds },
-          },
-        });
-
-        // Identify new Shopify orders
-        const existingOrderIds = new Set(existingDbOrders.map(order => order.order_id));
-        const newShopifyOrders = batch.filter(order => !existingOrderIds.has(order.id));
-
-        // Save new orders if any
-        if (newShopifyOrders.length > 0) {
-          await prisma.order.createMany({
-            data: newShopifyOrders.map(order => formatOrderData(order, user.id)),
-            skipDuplicates: true,
+        // Use a transaction to handle all operations in the batch
+        await prisma.$transaction(async (prisma) => {
+          // Fetch existing orders in a single query
+          const existingDbOrders = await prisma.order.findMany({
+            where: {
+              user_id: user.id,
+              order_id: { in: orderIds },
+            },
           });
-        }
 
-        // Identify refunded orders from the existing DB orders
-        const refundedOrders = existingDbOrders.filter(dbOrder => {
-          const shopifyOrder = shopifyOrderMap.get(dbOrder.order_id);
-          return shopifyOrder && shopifyOrder.refunds.length > 0;
-        });
+          // Identify new Shopify orders
+          const existingOrderIds = new Set(
+            existingDbOrders.map((order) => order.order_id),
+          );
+          const newShopifyOrders = batch.filter(
+            (order) => !existingOrderIds.has(order.id),
+          );
 
-        // Handle refunded orders if any
-        if (refundedOrders.length > 0) {
-          const updates = refundedOrders.map(async (dbOrder) => {
+          // Save new orders if any
+          if (newShopifyOrders.length > 0) {
+            await prisma.order.createMany({
+              data: newShopifyOrders.map((order) =>
+                formatOrderData(order, user.id),
+              ),
+              skipDuplicates: true,
+            });
+          }
+
+          // Identify refunded orders from the existing DB orders
+          const refundedOrders = existingDbOrders.filter((dbOrder) => {
             const shopifyOrder = shopifyOrderMap.get(dbOrder.order_id);
-
-            if (!shopifyOrder) {
-              return;
-            }
-
-            let refundedAmount = 0;
-
-            // Calculate the total refunded amount from the refunded items
-            for (const refund of shopifyOrder.refunds) {
-              for (const refundItem of refund.refundLineItems) {
-                const subtotal = parseFloat(refundItem.subtotalSet.shopMoney.amount);
-                const totalTax = parseFloat(refundItem.totalTaxSet.shopMoney.amount);
-                refundedAmount += subtotal + totalTax;
-              }
-            }
-
-            // Update or delete the order amount in the database
-            const updatedAmount = dbOrder.amount - refundedAmount;
-
-            if (updatedAmount <= 0) {
-              // Delete the order if the total amount is 0 or negative
-              await prisma.orderProfile.deleteMany({
-                where: { order_id: dbOrder.id },
-              });
-
-              await prisma.order.delete({
-                where: { id: dbOrder.id },
-              });
-            } else {
-              // Update the order amount if it's positive
-              await prisma.order.update({
-                where: { id: dbOrder.id },
-                data: { amount: updatedAmount },
-              });
-            }
+            return shopifyOrder && shopifyOrder.refunds.length > 0;
           });
 
-          await Promise.all(updates);
-        }
-      });
+          // Handle refunded orders if any
+          if (refundedOrders.length > 0) {
+            const updates = refundedOrders.map(async (dbOrder) => {
+              const shopifyOrder = shopifyOrderMap.get(dbOrder.order_id);
 
-    }));
+              if (!shopifyOrder) {
+                return;
+              }
 
+              let refundedAmount = 0;
+
+              // Calculate the total refunded amount from the refunded items
+              for (const refund of shopifyOrder.refunds) {
+                for (const refundItem of refund.refundLineItems) {
+                  const subtotal = parseFloat(
+                    refundItem.subtotalSet.shopMoney.amount,
+                  );
+                  const totalTax = parseFloat(
+                    refundItem.totalTaxSet.shopMoney.amount,
+                  );
+                  refundedAmount += subtotal + totalTax;
+                }
+              }
+
+              // Update or delete the order amount in the database
+              const updatedAmount = dbOrder.amount - refundedAmount;
+
+              if (updatedAmount <= 0) {
+                // Delete the order if the total amount is 0 or negative
+                await prisma.orderProfile.deleteMany({
+                  where: { order_id: dbOrder.id },
+                });
+
+                await prisma.order.delete({
+                  where: { id: dbOrder.id },
+                });
+              } else {
+                // Update the order amount if it's positive
+                await prisma.order.update({
+                  where: { id: dbOrder.id },
+                  data: { amount: updatedAmount },
+                });
+              }
+            });
+
+            await Promise.all(updates);
+          }
+        });
+      }),
+    );
   } catch (error) {
     logtail.error(`Failed to save orders for user ${user.id}: ${error}`);
-    throw new ErrorWithStatusCode(`Failed to save orders for user ${user.id}`, 500);
+    throw new ErrorWithStatusCode(
+      `Failed to save orders for user ${user.id}`,
+      500,
+    );
   } finally {
     logtail.info(`Successfully saved/updated orders for user ${user.email}`);
   }
@@ -211,8 +248,10 @@ export const saveOrders = async (user: User, shopifyOrders: Order[]) => {
   return shopifyOrders;
 };
 
-
-export const processOrdersForCampaigns = async (user: any, allOrders: PrismaOrder[]) => {
+export const processOrdersForCampaigns = async (
+  user: any,
+  allOrders: PrismaOrder[],
+) => {
   try {
     const campaigns = user.campaigns;
     for (const allOrder of allOrders) {
@@ -224,7 +263,10 @@ export const processOrdersForCampaigns = async (user: any, allOrders: PrismaOrde
   }
 };
 
-export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any[]) => {
+export const findAndUpdateProfile = async (
+  allOrder: PrismaOrder,
+  campaigns: any[],
+) => {
   try {
     for (const campaign of campaigns) {
       let revenueForDiscountCodesWithNoProfile = 0;
@@ -234,9 +276,16 @@ export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any
 
       const shopifyOrderCreatedAt = new Date(allOrder.created_at);
 
-      if (shopifyOrderCreatedAt >= campaignStartDate && shopifyOrderCreatedAt <= campaignEndDate) {
+      if (
+        shopifyOrderCreatedAt >= campaignStartDate &&
+        shopifyOrderCreatedAt <= campaignEndDate
+      ) {
         const profile = await prisma.profile.findFirst({
-          where: buildProfileWhereClause(allOrder, campaign.segment_id, revenueForDiscountCodesWithNoProfile),
+          where: buildProfileWhereClause(
+            allOrder,
+            campaign.segment_id,
+            revenueForDiscountCodesWithNoProfile,
+          ),
           include: { orders: true },
         });
         if (profile) {
@@ -260,7 +309,10 @@ export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any
         } else {
           // If no profile is found but the order discount code matches a campaign discount code, add the revenue to the campaign
           const discountCodes = allOrder.discount_codes;
-          const matchingDiscountCode = campaign.discount_codes.find((campaignDiscountCode: string) => discountCodes.includes(campaignDiscountCode));
+          const matchingDiscountCode = campaign.discount_codes.find(
+            (campaignDiscountCode: string) =>
+              discountCodes.includes(campaignDiscountCode),
+          );
           if (matchingDiscountCode) {
             const profile = await prisma.profile.findFirst({
               where: {
@@ -271,15 +323,15 @@ export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any
               await prisma.profile.create({
                 data: {
                   id: `additional-revenue-${campaign.id}`,
-                  first_name: 'additional-revenue',
-                  last_name: 'additional-revenue',
-                  address: 'additional-revenue',
-                  zip_code: 'additional-revenue',
-                  city: 'additional-revenue',
-                  country: 'additional-revenue',
+                  first_name: "additional-revenue",
+                  last_name: "additional-revenue",
+                  address: "additional-revenue",
+                  zip_code: "additional-revenue",
+                  city: "additional-revenue",
+                  country: "additional-revenue",
                   segment_id: campaign.segment_id,
                   letter_sent: true,
-                  email: 'additional-revenue',
+                  email: "additional-revenue",
                 },
               });
             }
@@ -307,7 +359,11 @@ export const findAndUpdateProfile = async (allOrder: PrismaOrder, campaigns: any
 };
 
 // REMOVED DISCOUNT CODES BECAUSE OF SCEWED RESULTS: MULTIPLE PROFILES ARE FOUND FOR THE SAME ORDER BECAUSE OF NON-UNIQUE DISCOUNT CODES
-export const buildProfileWhereClause = (allOrder: PrismaOrder, segmentId: string, revenueForDiscountCodesWithNoProfile: number) => {
+export const buildProfileWhereClause = (
+  allOrder: PrismaOrder,
+  segmentId: string,
+  revenueForDiscountCodesWithNoProfile: number,
+) => {
   const firstName = allOrder.first_name.toLowerCase();
   const lastName = allOrder.last_name.toLowerCase();
   const email = allOrder.email.toLowerCase();
@@ -321,7 +377,12 @@ export const buildProfileWhereClause = (allOrder: PrismaOrder, segmentId: string
   return {
     OR: [
       { email },
-      { address: { contains: address }, zip_code: zip, first_name: firstName, last_name: lastWordOfLastName },
+      {
+        address: { contains: address },
+        zip_code: zip,
+        first_name: firstName,
+        last_name: lastWordOfLastName,
+      },
       { segment: { campaign: { discount_codes: { hasSome: discountCodes } } } },
     ],
     letter_sent: true,
@@ -335,13 +396,16 @@ export const formatOrderData = (newShopifyOrder: Order, userId: string) => {
     created_at: newShopifyOrder.createdAt,
     order_id: newShopifyOrder.id,
     user_id: userId,
-    amount: newShopifyOrder.totalPriceSet ? parseFloat(newShopifyOrder.totalPriceSet.shopMoney.amount) : 0,
+    amount: newShopifyOrder.totalPriceSet
+      ? parseFloat(newShopifyOrder.totalPriceSet.shopMoney.amount)
+      : 0,
     discount_codes: newShopifyOrder.discountCodes,
     first_name: newShopifyOrder.customer?.firstName?.toLowerCase() || "",
     last_name: newShopifyOrder.customer?.lastName?.toLowerCase() || "",
     email: newShopifyOrder.customer?.email?.toLowerCase() || "",
     zip_code: newShopifyOrder.customer?.addresses?.[0]?.zip || "",
-    address: newShopifyOrder.customer?.addresses?.[0]?.address1?.toLowerCase() || "",
+    address:
+      newShopifyOrder.customer?.addresses?.[0]?.address1?.toLowerCase() || "",
   };
 };
 
@@ -355,7 +419,7 @@ export async function triggerShopifyBulkQueries() {
     where: {
       integrations: {
         some: {
-          type: 'shopify',
+          type: "shopify",
         },
       },
     },
@@ -372,8 +436,8 @@ export async function triggerShopifyBulkQueries() {
   const currentDate = new Date();
   const currentDateMinus365Days = new Date(currentDate);
   currentDateMinus365Days.setDate(currentDate.getDate() - 365);
-  const dateOnly = currentDateMinus365Days.toISOString().split('T')[0];
-  const shopifyApiVersion = '2021-10'; // Ideally, this should be a configurable constant
+  const dateOnly = currentDateMinus365Days.toISOString().split("T")[0];
+  const shopifyApiVersion = "2021-10"; // Ideally, this should be a configurable constant
 
   const shopifyBulkOperationQuery = `
   mutation {
@@ -426,7 +490,7 @@ export async function triggerShopifyBulkQueries() {
 
   for (const user of users) {
     const shopifyIntegration = user.integrations.find(
-      (integration) => integration.type === 'shopify'
+      (integration) => integration.type === "shopify",
     );
 
     if (!shopifyIntegration || !shopifyIntegration.token) {
@@ -435,13 +499,13 @@ export async function triggerShopifyBulkQueries() {
 
     const shopifyApiUrl = `https://${shopifyIntegration.shop}.myshopify.com/admin/api/${shopifyApiVersion}/graphql.json`;
     const shopifyApiHeaders = {
-      'Content-Type': 'application/json',
-      'X-Shopify-Access-Token': shopifyIntegration.token,
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": shopifyIntegration.token,
     };
 
     try {
       const response = await fetch(shopifyApiUrl, {
-        method: 'POST',
+        method: "POST",
         headers: shopifyApiHeaders,
         body: JSON.stringify({ query: shopifyBulkOperationQuery }),
       });
@@ -449,49 +513,68 @@ export async function triggerShopifyBulkQueries() {
       const data: any = await response.json();
 
       if (!response.ok) {
-        logtail.error(`Failed to trigger Shopify bulk query for user ${user.id}: ${data.errors}`);
+        logtail.error(
+          `Failed to trigger Shopify bulk query for user ${user.id}: ${data.errors}`,
+        );
       } else {
-        logtail.info(`Successfully triggered Shopify bulk query for user ${user.id}`);
+        logtail.info(
+          `Successfully triggered Shopify bulk query for user ${user.id}`,
+        );
       }
     } catch (error: any) {
-      logtail.error(`Failed to trigger Shopify bulk query for user ${user.id}: ${error.message}`);
+      logtail.error(
+        `Failed to trigger Shopify bulk query for user ${user.id}: ${error.message}`,
+      );
     }
   }
 }
 
-export async function billUserForLettersSent(profilesLength: number, user_id: string) {
+export async function billUserForLettersSent(
+  profilesLength: number,
+  user_id: string,
+) {
   const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
   if (!STRIPE_SECRET_KEY) {
-    throw new ErrorWithStatusCode('Stripe secret key is missing', 500);
+    throw new ErrorWithStatusCode("Stripe secret key is missing", 500);
   }
 
-  const stripe = new Stripe(STRIPE_SECRET_KEY)
+  const stripe = new Stripe(STRIPE_SECRET_KEY);
   const subscription = await prisma.subscription.findFirst({
     where: { user_id },
   });
   if (!subscription) {
-    logtail.error(`User ${user_id} does not have an active subscription and cannot be billed for letters sent`);
+    logtail.error(
+      `User ${user_id} does not have an active subscription and cannot be billed for letters sent`,
+    );
     throw new ErrorWithStatusCode(MissingSubscriptionError, 400);
   }
 
-  const usageRecord = await stripe.subscriptionItems.createUsageRecord(subscription.subscription_item_id, {
-    quantity: profilesLength,
-    timestamp: Math.floor(Date.now() / 1000),
-    action: 'increment',
-  });
+  const usageRecord = await stripe.subscriptionItems.createUsageRecord(
+    subscription.subscription_item_id,
+    {
+      quantity: profilesLength,
+      timestamp: Math.floor(Date.now() / 1000),
+      action: "increment",
+    },
+  );
 
   if (!usageRecord) {
-    logtail.error(`User with id ${user_id} has a subscription but could not be billed for letters sent`);
+    logtail.error(
+      `User with id ${user_id} has a subscription but could not be billed for letters sent`,
+    );
     throw new ErrorWithStatusCode(FailedToBillUserError, 500);
   }
 }
 
-export async function generateTestDesign(blob: string, format: string): Promise<Buffer> {
+export async function generateTestDesign(
+  blob: string,
+  format: string,
+): Promise<Buffer> {
   const engine = await CreativeEngine.init(config);
   const scene = await engine.scene.loadFromURL(blob);
   const pages = engine.scene.getPages();
   const pageWidth = engine.block.getWidth(pages[0]);
-  const pageHeight = engine.block.getHeight(pages[0])
+  const pageHeight = engine.block.getHeight(pages[0]);
   let idText = engine.block.create("text");
 
   if (pageWidth === 210 && pageHeight === 148) {
@@ -522,14 +605,14 @@ export async function generateTestDesign(blob: string, format: string): Promise<
     email: "test@test.dk",
     custom_variable: "Dette er en custom variable",
     demo: false,
-  }
+  };
 
-  generateBleedLines(engine, pages, pageWidth, pageHeight)
-  updateVariables(engine, profile)
+  generateBleedLines(engine, pages, pageWidth, pageHeight);
+  updateVariables(engine, profile);
   generateIdBlock(idText, engine, pageWidth, pageHeight, pages, profile);
   const { MimeType } = CESDK;
   const pdfBlob = await engine.block.export(scene, MimeType.Pdf, {
-    exportPdfWithHighCompatibility: true
+    exportPdfWithHighCompatibility: true,
   });
 
   // Convert the Blob to a Buffer
@@ -538,119 +621,207 @@ export async function generateTestDesign(blob: string, format: string): Promise<
   return pdfBuffer;
 }
 
-export function generateBleedLines(engine: CreativeEngine, pages: number[], pageWidth: number, pageHeight: number) {
+export function generateBleedLines(
+  engine: CreativeEngine,
+  pages: number[],
+  pageWidth: number,
+  pageHeight: number,
+) {
   for (const page of pages) {
-    const bottomRightHorizontalBlackBleedLine = engine.block.create("graphic")
-    engine.block.setShape(bottomRightHorizontalBlackBleedLine, engine.block.createShape("rect"))
-    engine.block.setFill(bottomRightHorizontalBlackBleedLine, engine.block.createFill("color"))
-    engine.block.setWidth(bottomRightHorizontalBlackBleedLine, 5)
-    engine.block.setHeight(bottomRightHorizontalBlackBleedLine, 0.25)
-    engine.block.setPositionX(bottomRightHorizontalBlackBleedLine, pageWidth)
-    engine.block.setPositionY(bottomRightHorizontalBlackBleedLine, pageHeight)
-    engine.block.setFillSolidColor(bottomRightHorizontalBlackBleedLine, 0, 0, 0, 1)
-    engine.block.appendChild(page, bottomRightHorizontalBlackBleedLine)
-    const bottomRightVerticalBlackBleedLine = engine.block.duplicate(bottomRightHorizontalBlackBleedLine)
-    engine.block.setWidth(bottomRightVerticalBlackBleedLine, 0.25)
-    engine.block.setHeight(bottomRightVerticalBlackBleedLine, 5)
-    engine.block.setPositionX(bottomRightVerticalBlackBleedLine, pageWidth)
-    engine.block.setPositionY(bottomRightVerticalBlackBleedLine, pageHeight)
-    const bottomRightHorizontalWhiteBleedLine = engine.block.duplicate(bottomRightHorizontalBlackBleedLine)
-    engine.block.setWidth(bottomRightHorizontalWhiteBleedLine, 5)
-    engine.block.setHeight(bottomRightHorizontalWhiteBleedLine, 0.25)
-    engine.block.setPositionX(bottomRightHorizontalWhiteBleedLine, pageWidth)
-    engine.block.setPositionY(bottomRightHorizontalWhiteBleedLine, pageHeight - 0.25)
-    engine.block.setFillSolidColor(bottomRightHorizontalWhiteBleedLine, 1, 1, 1, 1)
-    const bottomRightVerticalWhiteBleedLine = engine.block.duplicate(bottomRightHorizontalBlackBleedLine)
-    engine.block.setWidth(bottomRightVerticalWhiteBleedLine, 0.25)
-    engine.block.setHeight(bottomRightVerticalWhiteBleedLine, 5)
-    engine.block.setPositionX(bottomRightVerticalWhiteBleedLine, pageWidth - 0.25)
-    engine.block.setPositionY(bottomRightVerticalWhiteBleedLine, pageHeight)
-    engine.block.setFillSolidColor(bottomRightVerticalWhiteBleedLine, 1, 1, 1, 1)
+    const bottomRightHorizontalBlackBleedLine = engine.block.create("graphic");
+    engine.block.setShape(
+      bottomRightHorizontalBlackBleedLine,
+      engine.block.createShape("rect"),
+    );
+    engine.block.setFill(
+      bottomRightHorizontalBlackBleedLine,
+      engine.block.createFill("color"),
+    );
+    engine.block.setWidth(bottomRightHorizontalBlackBleedLine, 5);
+    engine.block.setHeight(bottomRightHorizontalBlackBleedLine, 0.25);
+    engine.block.setPositionX(bottomRightHorizontalBlackBleedLine, pageWidth);
+    engine.block.setPositionY(bottomRightHorizontalBlackBleedLine, pageHeight);
+    engine.block.setFillSolidColor(
+      bottomRightHorizontalBlackBleedLine,
+      0,
+      0,
+      0,
+      1,
+    );
+    engine.block.appendChild(page, bottomRightHorizontalBlackBleedLine);
+    const bottomRightVerticalBlackBleedLine = engine.block.duplicate(
+      bottomRightHorizontalBlackBleedLine,
+    );
+    engine.block.setWidth(bottomRightVerticalBlackBleedLine, 0.25);
+    engine.block.setHeight(bottomRightVerticalBlackBleedLine, 5);
+    engine.block.setPositionX(bottomRightVerticalBlackBleedLine, pageWidth);
+    engine.block.setPositionY(bottomRightVerticalBlackBleedLine, pageHeight);
+    const bottomRightHorizontalWhiteBleedLine = engine.block.duplicate(
+      bottomRightHorizontalBlackBleedLine,
+    );
+    engine.block.setWidth(bottomRightHorizontalWhiteBleedLine, 5);
+    engine.block.setHeight(bottomRightHorizontalWhiteBleedLine, 0.25);
+    engine.block.setPositionX(bottomRightHorizontalWhiteBleedLine, pageWidth);
+    engine.block.setPositionY(
+      bottomRightHorizontalWhiteBleedLine,
+      pageHeight - 0.25,
+    );
+    engine.block.setFillSolidColor(
+      bottomRightHorizontalWhiteBleedLine,
+      1,
+      1,
+      1,
+      1,
+    );
+    const bottomRightVerticalWhiteBleedLine = engine.block.duplicate(
+      bottomRightHorizontalBlackBleedLine,
+    );
+    engine.block.setWidth(bottomRightVerticalWhiteBleedLine, 0.25);
+    engine.block.setHeight(bottomRightVerticalWhiteBleedLine, 5);
+    engine.block.setPositionX(
+      bottomRightVerticalWhiteBleedLine,
+      pageWidth - 0.25,
+    );
+    engine.block.setPositionY(bottomRightVerticalWhiteBleedLine, pageHeight);
+    engine.block.setFillSolidColor(
+      bottomRightVerticalWhiteBleedLine,
+      1,
+      1,
+      1,
+      1,
+    );
 
     // Top left
-    const topLeftHorizontalBlackBleedLine = engine.block.duplicate(bottomRightHorizontalBlackBleedLine)
-    engine.block.setWidth(topLeftHorizontalBlackBleedLine, 5)
-    engine.block.setHeight(topLeftHorizontalBlackBleedLine, 0.25)
-    engine.block.setPositionX(topLeftHorizontalBlackBleedLine, -5)
-    engine.block.setPositionY(topLeftHorizontalBlackBleedLine, -0.25)
-    const topLeftVerticalBlackBleedLine = engine.block.duplicate(bottomRightHorizontalBlackBleedLine)
-    engine.block.setWidth(topLeftVerticalBlackBleedLine, 0.25)
-    engine.block.setHeight(topLeftVerticalBlackBleedLine, 5)
-    engine.block.setPositionX(topLeftVerticalBlackBleedLine, -0.25)
-    engine.block.setPositionY(topLeftVerticalBlackBleedLine, -5)
-    const topLeftHorizontalWhiteBleedLine = engine.block.duplicate(bottomRightHorizontalBlackBleedLine)
-    engine.block.setWidth(topLeftHorizontalWhiteBleedLine, 5)
-    engine.block.setHeight(topLeftHorizontalWhiteBleedLine, 0.25)
-    engine.block.setPositionX(topLeftHorizontalWhiteBleedLine, -5)
-    engine.block.setPositionY(topLeftHorizontalWhiteBleedLine, 0)
-    engine.block.setFillSolidColor(topLeftHorizontalWhiteBleedLine, 1, 1, 1, 1)
-    const topLeftVerticalWhiteBleedLine = engine.block.duplicate(bottomRightHorizontalBlackBleedLine)
-    engine.block.setWidth(topLeftVerticalWhiteBleedLine, 0.25)
-    engine.block.setHeight(topLeftVerticalWhiteBleedLine, 5)
-    engine.block.setPositionX(topLeftVerticalWhiteBleedLine, 0)
-    engine.block.setPositionY(topLeftVerticalWhiteBleedLine, -5)
-    engine.block.setFillSolidColor(topLeftVerticalWhiteBleedLine, 1, 1, 1, 1)
+    const topLeftHorizontalBlackBleedLine = engine.block.duplicate(
+      bottomRightHorizontalBlackBleedLine,
+    );
+    engine.block.setWidth(topLeftHorizontalBlackBleedLine, 5);
+    engine.block.setHeight(topLeftHorizontalBlackBleedLine, 0.25);
+    engine.block.setPositionX(topLeftHorizontalBlackBleedLine, -5);
+    engine.block.setPositionY(topLeftHorizontalBlackBleedLine, -0.25);
+    const topLeftVerticalBlackBleedLine = engine.block.duplicate(
+      bottomRightHorizontalBlackBleedLine,
+    );
+    engine.block.setWidth(topLeftVerticalBlackBleedLine, 0.25);
+    engine.block.setHeight(topLeftVerticalBlackBleedLine, 5);
+    engine.block.setPositionX(topLeftVerticalBlackBleedLine, -0.25);
+    engine.block.setPositionY(topLeftVerticalBlackBleedLine, -5);
+    const topLeftHorizontalWhiteBleedLine = engine.block.duplicate(
+      bottomRightHorizontalBlackBleedLine,
+    );
+    engine.block.setWidth(topLeftHorizontalWhiteBleedLine, 5);
+    engine.block.setHeight(topLeftHorizontalWhiteBleedLine, 0.25);
+    engine.block.setPositionX(topLeftHorizontalWhiteBleedLine, -5);
+    engine.block.setPositionY(topLeftHorizontalWhiteBleedLine, 0);
+    engine.block.setFillSolidColor(topLeftHorizontalWhiteBleedLine, 1, 1, 1, 1);
+    const topLeftVerticalWhiteBleedLine = engine.block.duplicate(
+      bottomRightHorizontalBlackBleedLine,
+    );
+    engine.block.setWidth(topLeftVerticalWhiteBleedLine, 0.25);
+    engine.block.setHeight(topLeftVerticalWhiteBleedLine, 5);
+    engine.block.setPositionX(topLeftVerticalWhiteBleedLine, 0);
+    engine.block.setPositionY(topLeftVerticalWhiteBleedLine, -5);
+    engine.block.setFillSolidColor(topLeftVerticalWhiteBleedLine, 1, 1, 1, 1);
 
     // Top right
-    const topRightHorizontalBlackBleedLine = engine.block.duplicate(bottomRightHorizontalBlackBleedLine)
-    engine.block.setWidth(topRightHorizontalBlackBleedLine, 5)
-    engine.block.setHeight(topRightHorizontalBlackBleedLine, 0.25)
-    engine.block.setPositionX(topRightHorizontalBlackBleedLine, pageWidth)
-    engine.block.setPositionY(topRightHorizontalBlackBleedLine, -0.25)
-    const topRightVerticalBlackBleedLine = engine.block.duplicate(bottomRightHorizontalBlackBleedLine)
-    engine.block.setWidth(topRightVerticalBlackBleedLine, 0.25)
-    engine.block.setHeight(topRightVerticalBlackBleedLine, 5)
-    engine.block.setPositionX(topRightVerticalBlackBleedLine, pageWidth)
-    engine.block.setPositionY(topRightVerticalBlackBleedLine, -5)
-    const topRightHorizontalWhiteBleedLine = engine.block.duplicate(bottomRightHorizontalBlackBleedLine)
-    engine.block.setWidth(topRightHorizontalWhiteBleedLine, 5)
-    engine.block.setHeight(topRightHorizontalWhiteBleedLine, 0.25)
-    engine.block.setPositionX(topRightHorizontalWhiteBleedLine, pageWidth)
-    engine.block.setPositionY(topRightHorizontalWhiteBleedLine, 0)
-    engine.block.setFillSolidColor(topRightHorizontalWhiteBleedLine, 1, 1, 1, 1)
-    const topRightVerticalWhiteBleedLine = engine.block.duplicate(bottomRightHorizontalBlackBleedLine)
-    engine.block.setWidth(topRightVerticalWhiteBleedLine, 0.25)
-    engine.block.setHeight(topRightVerticalWhiteBleedLine, 5)
-    engine.block.setPositionX(topRightVerticalWhiteBleedLine, pageWidth - 0.25)
-    engine.block.setPositionY(topRightVerticalWhiteBleedLine, -5)
-    engine.block.setFillSolidColor(topRightVerticalWhiteBleedLine, 1, 1, 1, 1)
+    const topRightHorizontalBlackBleedLine = engine.block.duplicate(
+      bottomRightHorizontalBlackBleedLine,
+    );
+    engine.block.setWidth(topRightHorizontalBlackBleedLine, 5);
+    engine.block.setHeight(topRightHorizontalBlackBleedLine, 0.25);
+    engine.block.setPositionX(topRightHorizontalBlackBleedLine, pageWidth);
+    engine.block.setPositionY(topRightHorizontalBlackBleedLine, -0.25);
+    const topRightVerticalBlackBleedLine = engine.block.duplicate(
+      bottomRightHorizontalBlackBleedLine,
+    );
+    engine.block.setWidth(topRightVerticalBlackBleedLine, 0.25);
+    engine.block.setHeight(topRightVerticalBlackBleedLine, 5);
+    engine.block.setPositionX(topRightVerticalBlackBleedLine, pageWidth);
+    engine.block.setPositionY(topRightVerticalBlackBleedLine, -5);
+    const topRightHorizontalWhiteBleedLine = engine.block.duplicate(
+      bottomRightHorizontalBlackBleedLine,
+    );
+    engine.block.setWidth(topRightHorizontalWhiteBleedLine, 5);
+    engine.block.setHeight(topRightHorizontalWhiteBleedLine, 0.25);
+    engine.block.setPositionX(topRightHorizontalWhiteBleedLine, pageWidth);
+    engine.block.setPositionY(topRightHorizontalWhiteBleedLine, 0);
+    engine.block.setFillSolidColor(
+      topRightHorizontalWhiteBleedLine,
+      1,
+      1,
+      1,
+      1,
+    );
+    const topRightVerticalWhiteBleedLine = engine.block.duplicate(
+      bottomRightHorizontalBlackBleedLine,
+    );
+    engine.block.setWidth(topRightVerticalWhiteBleedLine, 0.25);
+    engine.block.setHeight(topRightVerticalWhiteBleedLine, 5);
+    engine.block.setPositionX(topRightVerticalWhiteBleedLine, pageWidth - 0.25);
+    engine.block.setPositionY(topRightVerticalWhiteBleedLine, -5);
+    engine.block.setFillSolidColor(topRightVerticalWhiteBleedLine, 1, 1, 1, 1);
 
     // Bottom left
-    const bottomLeftHorizontalBlackBleedLine = engine.block.duplicate(bottomRightHorizontalBlackBleedLine)
-    engine.block.setWidth(bottomLeftHorizontalBlackBleedLine, 5)
-    engine.block.setHeight(bottomLeftHorizontalBlackBleedLine, 0.25)
-    engine.block.setPositionX(bottomLeftHorizontalBlackBleedLine, -5)
-    engine.block.setPositionY(bottomLeftHorizontalBlackBleedLine, pageHeight)
-    const bottomLeftVerticalBlackBleedLine = engine.block.duplicate(bottomRightHorizontalBlackBleedLine)
-    engine.block.setWidth(bottomLeftVerticalBlackBleedLine, 0.25)
-    engine.block.setHeight(bottomLeftVerticalBlackBleedLine, 5)
-    engine.block.setPositionX(bottomLeftVerticalBlackBleedLine, -0.25)
-    engine.block.setPositionY(bottomLeftVerticalBlackBleedLine, pageHeight)
-    const bottomLeftHorizontalWhiteBleedLine = engine.block.duplicate(bottomRightHorizontalBlackBleedLine)
-    engine.block.setWidth(bottomLeftHorizontalWhiteBleedLine, 5)
-    engine.block.setHeight(bottomLeftHorizontalWhiteBleedLine, 0.25)
-    engine.block.setPositionX(bottomLeftHorizontalWhiteBleedLine, -5)
-    engine.block.setPositionY(bottomLeftHorizontalWhiteBleedLine, pageHeight - 0.25)
-    engine.block.setFillSolidColor(bottomLeftHorizontalWhiteBleedLine, 1, 1, 1, 1)
-    const bottomLeftVerticalWhiteBleedLine = engine.block.duplicate(bottomRightHorizontalBlackBleedLine)
-    engine.block.setWidth(bottomLeftVerticalWhiteBleedLine, 0.25)
-    engine.block.setHeight(bottomLeftVerticalWhiteBleedLine, 5)
-    engine.block.setPositionX(bottomLeftVerticalWhiteBleedLine, 0)
-    engine.block.setPositionY(bottomLeftVerticalWhiteBleedLine, pageHeight)
-    engine.block.setFillSolidColor(bottomLeftVerticalWhiteBleedLine, 1, 1, 1, 1)
+    const bottomLeftHorizontalBlackBleedLine = engine.block.duplicate(
+      bottomRightHorizontalBlackBleedLine,
+    );
+    engine.block.setWidth(bottomLeftHorizontalBlackBleedLine, 5);
+    engine.block.setHeight(bottomLeftHorizontalBlackBleedLine, 0.25);
+    engine.block.setPositionX(bottomLeftHorizontalBlackBleedLine, -5);
+    engine.block.setPositionY(bottomLeftHorizontalBlackBleedLine, pageHeight);
+    const bottomLeftVerticalBlackBleedLine = engine.block.duplicate(
+      bottomRightHorizontalBlackBleedLine,
+    );
+    engine.block.setWidth(bottomLeftVerticalBlackBleedLine, 0.25);
+    engine.block.setHeight(bottomLeftVerticalBlackBleedLine, 5);
+    engine.block.setPositionX(bottomLeftVerticalBlackBleedLine, -0.25);
+    engine.block.setPositionY(bottomLeftVerticalBlackBleedLine, pageHeight);
+    const bottomLeftHorizontalWhiteBleedLine = engine.block.duplicate(
+      bottomRightHorizontalBlackBleedLine,
+    );
+    engine.block.setWidth(bottomLeftHorizontalWhiteBleedLine, 5);
+    engine.block.setHeight(bottomLeftHorizontalWhiteBleedLine, 0.25);
+    engine.block.setPositionX(bottomLeftHorizontalWhiteBleedLine, -5);
+    engine.block.setPositionY(
+      bottomLeftHorizontalWhiteBleedLine,
+      pageHeight - 0.25,
+    );
+    engine.block.setFillSolidColor(
+      bottomLeftHorizontalWhiteBleedLine,
+      1,
+      1,
+      1,
+      1,
+    );
+    const bottomLeftVerticalWhiteBleedLine = engine.block.duplicate(
+      bottomRightHorizontalBlackBleedLine,
+    );
+    engine.block.setWidth(bottomLeftVerticalWhiteBleedLine, 0.25);
+    engine.block.setHeight(bottomLeftVerticalWhiteBleedLine, 5);
+    engine.block.setPositionX(bottomLeftVerticalWhiteBleedLine, 0);
+    engine.block.setPositionY(bottomLeftVerticalWhiteBleedLine, pageHeight);
+    engine.block.setFillSolidColor(
+      bottomLeftVerticalWhiteBleedLine,
+      1,
+      1,
+      1,
+      1,
+    );
   }
 }
 
 export function updateFirstName(engine: CreativeEngine, profile: Profile) {
   const firstName = profile.first_name.split(" ")[0];
-  const formattedFirstName = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+  const formattedFirstName =
+    firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
   engine.variable.setString("Fornavn", formattedFirstName);
 }
 
 export function updateLastName(engine: CreativeEngine, profile: Profile) {
   const nameParts = profile.last_name.split(" ");
   const lastName = nameParts[nameParts.length - 1];
-  const formattedLastName = lastName.charAt(0).toUpperCase() + lastName.slice(1).toLowerCase();
+  const formattedLastName =
+    lastName.charAt(0).toUpperCase() + lastName.slice(1).toLowerCase();
   engine.variable.setString("Efternavn", formattedLastName);
 }
 
@@ -659,14 +830,16 @@ export function updateEmail(engine: CreativeEngine, profile: Profile) {
 }
 
 export function updateAddress(engine: CreativeEngine, profile: Profile) {
-  const formattedAddress = profile.address.split(" ").map(word =>
-    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-  ).join(" ");
+  const formattedAddress = profile.address
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
   engine.variable.setString("Adresse", formattedAddress);
 }
 
 export function updateCity(engine: CreativeEngine, profile: Profile) {
-  const city = profile.city.charAt(0).toUpperCase() + profile.city.slice(1).toLowerCase();
+  const city =
+    profile.city.charAt(0).toUpperCase() + profile.city.slice(1).toLowerCase();
   engine.variable.setString("By", city);
 }
 
@@ -675,7 +848,9 @@ export function updateZipCode(engine: CreativeEngine, profile: Profile) {
 }
 
 export function updateCountry(engine: CreativeEngine, profile: Profile) {
-  const country = profile.country.charAt(0).toUpperCase() + profile.country.slice(1).toLowerCase();
+  const country =
+    profile.country.charAt(0).toUpperCase() +
+    profile.country.slice(1).toLowerCase();
   engine.variable.setString("Land", country);
 }
 
@@ -696,41 +871,48 @@ export function updateVariables(engine: CreativeEngine, profile: Profile) {
   updateCustomVariable(engine, profile);
 }
 
-export function generateIdBlock(idText: number, engine: CreativeEngine, pageWidth: number, pageHeight: number, pages: number[] = [], profile?: Profile) {
+export function generateIdBlock(
+  idText: number,
+  engine: CreativeEngine,
+  pageWidth: number,
+  pageHeight: number,
+  pages: number[] = [],
+  profile?: Profile,
+) {
   if (pages[1]) {
     // Add background to id text
-    const idBackground = engine.block.create("graphic")
-    engine.block.setShape(idBackground, engine.block.createShape("rect"))
-    engine.block.setFill(idBackground, engine.block.createFill("color"))
-    engine.block.setWidth(idBackground, 11)
-    engine.block.setHeight(idBackground, 5)
-    engine.block.setPositionX(idBackground, pageWidth - 11)
-    engine.block.setPositionY(idBackground, pageHeight - 5)
-    engine.block.setFillSolidColor(idBackground, 1, 1, 1, 1)
-    engine.block.appendChild(pages[1], idBackground)
+    const idBackground = engine.block.create("graphic");
+    engine.block.setShape(idBackground, engine.block.createShape("rect"));
+    engine.block.setFill(idBackground, engine.block.createFill("color"));
+    engine.block.setWidth(idBackground, 11);
+    engine.block.setHeight(idBackground, 5);
+    engine.block.setPositionX(idBackground, pageWidth - 11);
+    engine.block.setPositionY(idBackground, pageHeight - 5);
+    engine.block.setFillSolidColor(idBackground, 1, 1, 1, 1);
+    engine.block.appendChild(pages[1], idBackground);
 
     // Add text to id text
-    engine.block.setFloat(idText, "text/fontSize", 6.)
+    engine.block.setFloat(idText, "text/fontSize", 6);
     engine.block.setWidthMode(idText, "Auto");
     engine.block.setHeightMode(idText, "Auto");
     engine.block.setTextColor(idText, {
       r: 0,
       g: 0,
       b: 0,
-      a: 1
+      a: 1,
     });
-    engine.block.setAlwaysOnTop(idBackground, true)
-    engine.block.setAlwaysOnTop(idText, true)
+    engine.block.setAlwaysOnTop(idBackground, true);
+    engine.block.setAlwaysOnTop(idText, true);
 
     if (pages[1]) {
       if (profile) {
         engine.block.replaceText(idText, profile.id.slice(-5).toUpperCase());
       }
       engine.block.appendChild(idBackground, idText);
-      engine.block.setWidth(idText, 11)
-      engine.block.setHeight(idText, 5)
-      engine.block.setEnum(idText, 'text/verticalAlignment', 'Center');
-      engine.block.setEnum(idText, 'text/horizontalAlignment', 'Center')
+      engine.block.setWidth(idText, 11);
+      engine.block.setHeight(idText, 5);
+      engine.block.setEnum(idText, "text/verticalAlignment", "Center");
+      engine.block.setEnum(idText, "text/horizontalAlignment", "Center");
     }
   }
 }
@@ -744,7 +926,9 @@ export async function validateKlaviyoApiKeyForUser(user: User) {
   });
 
   if (integration && integration.klaviyo_api_key) {
-    const response: any = await fetchKlaviyoSegments(integration.klaviyo_api_key);
+    const response: any = await fetchKlaviyoSegments(
+      integration.klaviyo_api_key,
+    );
     if (response.errors) {
       return false;
     } else {
@@ -771,7 +955,7 @@ export async function fetchKlaviyoSegments(apiKey: string) {
 
 export async function getKlaviyoSegmentProfiles(
   klaviyoSegmentId: string | null,
-  userId: string
+  userId: string,
 ) {
   const integration = await prisma.integration.findFirst({
     where: {
@@ -806,7 +990,21 @@ export async function getKlaviyoSegmentProfiles(
         const { first_name, last_name, email, location } = profile.attributes;
         const { address1, city, zip, country } = location || {};
 
-        return id && first_name && last_name && address1 && city && zip && country && (country.toLowerCase() === "denmark" || country.toLowerCase() === "danmark" || country.toLowerCase() === "sweden" || country.toLowerCase() === "sverige" || country.toLowerCase() === "germany" || country.toLowerCase() === "tyskland");
+        return (
+          id &&
+          first_name &&
+          last_name &&
+          address1 &&
+          city &&
+          zip &&
+          country &&
+          (country.toLowerCase() === "denmark" ||
+            country.toLowerCase() === "danmark" ||
+            country.toLowerCase() === "sweden" ||
+            country.toLowerCase() === "sverige" ||
+            country.toLowerCase() === "germany" ||
+            country.toLowerCase() === "tyskland")
+        );
       });
 
       allProfiles = [...allProfiles, ...validProfiles];
@@ -823,14 +1021,14 @@ export async function getKlaviyoSegmentProfiles(
 
 export function returnNewKlaviyoSegmentProfiles(
   klaviyoSegmentProfiles: KlaviyoSegmentProfile[],
-  existingSegmentProfiles: Profile[]
+  existingSegmentProfiles: Profile[],
 ) {
   const newSegmentProfiles = klaviyoSegmentProfiles.filter(
     (klaviyoSegmentProfile) =>
       !existingSegmentProfiles.some(
         (existingProfile) =>
-          existingProfile.klaviyo_id === klaviyoSegmentProfile.id
-      )
+          existingProfile.klaviyo_id === klaviyoSegmentProfile.id,
+      ),
   );
 
   return newSegmentProfiles;
@@ -840,14 +1038,30 @@ export async function returnProfilesInRobinson(profiles: ProfileToAdd[]) {
   const profilesMap = new Map();
 
   for (const profile of profiles) {
-    const streetName = profile.address.split(' ')[0].toLowerCase();
+    const streetName = profile.address.split(" ")[0].toLowerCase();
     const firstNameParts = profile.first_name.toLowerCase().split(" ");
     const lastNameParts = profile.last_name.toLowerCase().split(" ");
     const zip = profile.zip_code;
 
     // Generate all combinations of first name and last name parts
-    const firstNameCombinations = firstNameParts.reduce<string[]>((combinations, _, i) => [...combinations, ...firstNameParts.slice(i).map((_, j) => firstNameParts.slice(i, i + j + 1).join(' '))], []);
-    const lastNameCombinations = lastNameParts.reduce<string[]>((combinations, _, i) => [...combinations, ...lastNameParts.slice(i).map((_, j) => lastNameParts.slice(i, i + j + 1).join(' '))], []);
+    const firstNameCombinations = firstNameParts.reduce<string[]>(
+      (combinations, _, i) => [
+        ...combinations,
+        ...firstNameParts
+          .slice(i)
+          .map((_, j) => firstNameParts.slice(i, i + j + 1).join(" ")),
+      ],
+      [],
+    );
+    const lastNameCombinations = lastNameParts.reduce<string[]>(
+      (combinations, _, i) => [
+        ...combinations,
+        ...lastNameParts
+          .slice(i)
+          .map((_, j) => lastNameParts.slice(i, i + j + 1).join(" ")),
+      ],
+      [],
+    );
 
     // Generate unique identifiers for all combinations of first name and last name combinations
     for (const firstName of firstNameCombinations) {
@@ -860,7 +1074,7 @@ export async function returnProfilesInRobinson(profiles: ProfileToAdd[]) {
 
   const foundProfiles: ProfileToAdd[] = [];
   const response = await fetch(
-    "https://rkjrflfwfqhhpwafimbe.supabase.co/storage/v1/object/public/robinson/robinson-modified.csv?t=2024-07-22T07%3A38%3A39.872Z"
+    "https://rkjrflfwfqhhpwafimbe.supabase.co/storage/v1/object/public/robinson/robinson-modified.csv?t=2024-07-22T07%3A38%3A39.872Z",
   );
 
   if (!response || !response.body) {
@@ -890,7 +1104,7 @@ export async function returnProfilesInRobinson(profiles: ProfileToAdd[]) {
       const [firstName, lastName, streetName, zip] = fields;
       const uniquePerson = `${firstName.trim().toLowerCase()},${lastName
         .trim()
-        .toLowerCase()},${streetName.split(' ')[0].trim().toLowerCase()},${zip.trim()}`;
+        .toLowerCase()},${streetName.split(" ")[0].trim().toLowerCase()},${zip.trim()}`;
       const profileToAdd = profilesMap.get(uniquePerson);
       if (profileToAdd) {
         foundProfiles.push(profileToAdd);
@@ -905,11 +1119,16 @@ if (!config.license) {
   throw new Error("Missing IMGLY license key");
 }
 
-export function generateIdText(engine: CreativeEngine, profile: Profile, idText: number, pages: number[]) {
+export function generateIdText(
+  engine: CreativeEngine,
+  profile: Profile,
+  idText: number,
+  pages: number[],
+) {
   if (pages[1]) {
     engine.block.replaceText(idText, profile.id.slice(-5).toUpperCase());
-    engine.block.setEnum(idText, 'text/verticalAlignment', 'Center');
-    engine.block.setEnum(idText, 'text/horizontalAlignment', 'Center');
+    engine.block.setEnum(idText, "text/verticalAlignment", "Center");
+    engine.block.setEnum(idText, "text/horizontalAlignment", "Center");
   }
 }
 
@@ -930,7 +1149,10 @@ export async function generatePdf(profiles: Profile[], designBlob: string) {
         const pdfBlob = await engine.block.export(scene, MimeType.Pdf);
         const pdfBuffer = Buffer.from(await pdfBlob.arrayBuffer());
         const pdf = await PDFDocument.load(pdfBuffer);
-        const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+        const copiedPages = await mergedPdf.copyPages(
+          pdf,
+          pdf.getPageIndices(),
+        );
         copiedPages.forEach((page) => mergedPdf.addPage(page));
       }
     });
@@ -942,7 +1164,11 @@ export async function generatePdf(profiles: Profile[], designBlob: string) {
   }
 }
 
-export async function sendPdfToPrintPartner(pdf: Buffer, campaign_id: string, dateString: string) {
+export async function sendPdfToPrintPartner(
+  pdf: Buffer,
+  campaign_id: string,
+  dateString: string,
+) {
   try {
     const client = new Client();
     await client.connect({
@@ -956,8 +1182,8 @@ export async function sendPdfToPrintPartner(pdf: Buffer, campaign_id: string, da
     await client.mkdir(`/files/til-distplus/${dateString}`, true);
     await client.put(
       pdf,
-      `/files/til-distplus/${dateString}/kampagne-${campaign_id}.pdf`
-    )
+      `/files/til-distplus/${dateString}/kampagne-${campaign_id}.pdf`,
+    );
 
     await client.end();
   } catch (error: any) {
@@ -965,7 +1191,11 @@ export async function sendPdfToPrintPartner(pdf: Buffer, campaign_id: string, da
   }
 }
 
-export async function generateCsvAndSendToPrintPartner(profiles: Profile[], campaign_id: string, dateString: string) {
+export async function generateCsvAndSendToPrintPartner(
+  profiles: Profile[],
+  campaign_id: string,
+  dateString: string,
+) {
   try {
     const client = new Client();
     await client.connect({
@@ -992,7 +1222,7 @@ export async function generateCsvAndSendToPrintPartner(profiles: Profile[], camp
     // Upload the CSV data to the SFTP server
     await client.put(
       csvBuffer,
-      `/files/til-distplus/${dateString}/kampagne-${campaign_id}.csv`
+      `/files/til-distplus/${dateString}/kampagne-${campaign_id}.csv`,
     );
 
     await client.end();
@@ -1002,10 +1232,18 @@ export async function generateCsvAndSendToPrintPartner(profiles: Profile[], camp
 }
 
 export function capitalizeWords(str: string) {
-  return str.split(" ").map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(" ");
+  return str
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
 }
 
-export async function sendLettersForNonDemoUser(user_id: string, profiles: Profile[], designBlob: string, campaign_id: string) {
+export async function sendLettersForNonDemoUser(
+  user_id: string,
+  profiles: Profile[],
+  designBlob: string,
+  campaign_id: string,
+) {
   // Try to bill the user for the letters sent
   try {
     await billUserForLettersSent(profiles.length, user_id);
@@ -1016,11 +1254,17 @@ export async function sendLettersForNonDemoUser(user_id: string, profiles: Profi
   // Generate pdf
   let pdf;
   try {
-    logtail.info(`Generating a pdf for user ${user_id} and campaign ${campaign_id}`);
+    logtail.info(
+      `Generating a pdf for user ${user_id} and campaign ${campaign_id}`,
+    );
     pdf = await generatePdf(profiles, designBlob);
-    logtail.info(`Successfully generated a pdf for user ${user_id} and campaign ${campaign_id}`);
+    logtail.info(
+      `Successfully generated a pdf for user ${user_id} and campaign ${campaign_id}`,
+    );
   } catch (error: any) {
-    logtail.error(`An error occured while trying to generate a pdf for user ${user_id} and campaign ${campaign_id}`);
+    logtail.error(
+      `An error occured while trying to generate a pdf for user ${user_id} and campaign ${campaign_id}`,
+    );
     throw new ErrorWithStatusCode(FailedToGeneratePdfError, 500);
   }
 
@@ -1029,20 +1273,32 @@ export async function sendLettersForNonDemoUser(user_id: string, profiles: Profi
   const dateString = `${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
 
   try {
-    logtail.info(`Sending a pdf to the print partner for user ${user_id} and campaign ${campaign_id}`);
+    logtail.info(
+      `Sending a pdf to the print partner for user ${user_id} and campaign ${campaign_id}`,
+    );
     await sendPdfToPrintPartner(pdf, user_id, dateString);
-    logtail.info(`Successfully sent a pdf to the print partner for user ${user_id} and campaign ${campaign_id}`);
+    logtail.info(
+      `Successfully sent a pdf to the print partner for user ${user_id} and campaign ${campaign_id}`,
+    );
   } catch (error: any) {
-    logtail.error(`An error occured while trying to send a pdf to the print partner for user ${user_id} and campaign ${campaign_id}`);
+    logtail.error(
+      `An error occured while trying to send a pdf to the print partner for user ${user_id} and campaign ${campaign_id}`,
+    );
     throw new ErrorWithStatusCode(FailedToSendPdfToPrintPartnerError, 500);
   }
 
   try {
-    logtail.info(`Generating a csv and sending it to the print partner for user ${user_id} and campaign ${campaign_id}`);
+    logtail.info(
+      `Generating a csv and sending it to the print partner for user ${user_id} and campaign ${campaign_id}`,
+    );
     await generateCsvAndSendToPrintPartner(profiles, user_id, dateString);
-    logtail.info(`Successfully generated a csv and sent it to the print partner for user ${user_id} and campaign ${campaign_id}`);
+    logtail.info(
+      `Successfully generated a csv and sent it to the print partner for user ${user_id} and campaign ${campaign_id}`,
+    );
   } catch (error: any) {
-    logtail.error(`An error occured while trying to generate a csv and send it to the print partner for user ${user_id} and campaign ${campaign_id}`);
+    logtail.error(
+      `An error occured while trying to generate a csv and send it to the print partner for user ${user_id} and campaign ${campaign_id}`,
+    );
     throw new ErrorWithStatusCode(FailedToSendPdfToPrintPartnerError, 500);
   }
 
@@ -1059,14 +1315,22 @@ export async function sendLettersForNonDemoUser(user_id: string, profiles: Profi
         letter_sent_at: new Date(),
       },
     });
-    logtail.info(`Successfully updated profiles to sent for user ${user_id} and campaign ${campaign_id}`);
+    logtail.info(
+      `Successfully updated profiles to sent for user ${user_id} and campaign ${campaign_id}`,
+    );
   } catch (error: any) {
-    logtail.error(`An error occured while trying to update profiles to sent for user ${user_id} and campaign ${campaign_id}`);
+    logtail.error(
+      `An error occured while trying to update profiles to sent for user ${user_id} and campaign ${campaign_id}`,
+    );
     throw new ErrorWithStatusCode(FailedToUpdateProfilesToSentError, 500);
   }
 }
 
-export async function sendLettersForDemoUser(profiles: Profile[], campaign_id: string, user_id: string) {
+export async function sendLettersForDemoUser(
+  profiles: Profile[],
+  campaign_id: string,
+  user_id: string,
+) {
   try {
     // Update profiles to sent
     await prisma.profile.updateMany({
@@ -1079,9 +1343,11 @@ export async function sendLettersForDemoUser(profiles: Profile[], campaign_id: s
         letter_sent: true,
         letter_sent_at: new Date(),
       },
-    })
+    });
   } catch (error: any) {
-    logtail.error(`An error occured while trying to update profiles to sent for user ${user_id} and campaign ${campaign_id}`);
+    logtail.error(
+      `An error occured while trying to update profiles to sent for user ${user_id} and campaign ${campaign_id}`,
+    );
     throw new ErrorWithStatusCode(FailedToUpdateProfilesToSentError, 500);
   }
 }
@@ -1093,8 +1359,8 @@ export async function activateScheduledCampaigns() {
     },
     include: {
       design: true,
-    }
-  })
+    },
+  });
 
   for (const campaign of campaigns) {
     // Check if campaign start date is in the past
@@ -1131,10 +1397,10 @@ export async function updateKlaviyoProfiles() {
     where: {
       integrations: {
         some: {
-          type: 'klaviyo',
+          type: "klaviyo",
         },
-      }
-    }
+      },
+    },
   });
 
   try {
@@ -1152,8 +1418,8 @@ export async function updateKlaviyoProfiles() {
           status: "active",
           type: "automated",
           segment: {
-            type: "klaviyo"
-          }
+            type: "klaviyo",
+          },
         },
         include: {
           segment: true,
@@ -1165,30 +1431,35 @@ export async function updateKlaviyoProfiles() {
       for (const campaign of campaigns) {
         const klaviyoSegmentProfiles = await getKlaviyoSegmentProfiles(
           campaign.segment.klaviyo_id,
-          campaign.user_id
+          campaign.user_id,
         );
         const existingSegmentProfiles = await prisma.profile.findMany({
-          where: { segment_id: campaign.segment_id }
+          where: { segment_id: campaign.segment_id },
         });
         const newKlaviyoSegmentProfiles = returnNewKlaviyoSegmentProfiles(
           klaviyoSegmentProfiles,
-          existingSegmentProfiles
+          existingSegmentProfiles,
         );
         const convertedKlaviyoSegmentProfiles = newKlaviyoSegmentProfiles.map(
           (klaviyoSegmentProfile) => ({
             id: klaviyoSegmentProfile.id,
-            first_name: klaviyoSegmentProfile.attributes.first_name.toLowerCase(),
+            first_name:
+              klaviyoSegmentProfile.attributes.first_name.toLowerCase(),
             last_name: klaviyoSegmentProfile.attributes.last_name.toLowerCase(),
             email: klaviyoSegmentProfile.attributes.email.toLowerCase(),
-            address: klaviyoSegmentProfile.attributes.location.address1.toLowerCase(),
+            address:
+              klaviyoSegmentProfile.attributes.location.address1.toLowerCase(),
             city: klaviyoSegmentProfile.attributes.location.city.toLowerCase(),
             zip_code: klaviyoSegmentProfile.attributes.location.zip,
-            country: klaviyoSegmentProfile.attributes.location.country.toLowerCase(),
+            country:
+              klaviyoSegmentProfile.attributes.location.country.toLowerCase(),
             segment_id: campaign.segment_id,
             in_robinson: false,
-            custom_variable: klaviyoSegmentProfile.attributes.properties.custom_variable || null,
+            custom_variable:
+              klaviyoSegmentProfile.attributes.properties.custom_variable ||
+              null,
             demo: campaign.segment.demo,
-          })
+          }),
         );
         let profilesToAddTemp = convertedKlaviyoSegmentProfiles;
         profilesToAdd.push(...profilesToAddTemp);
@@ -1200,8 +1471,14 @@ export async function updateKlaviyoProfiles() {
           where: {
             OR: [
               { email: profile.email, segment_id: profile.segment_id },
-              { zip_code: profile.zip_code, address: profile.address, first_name: profile.first_name, last_name: profile.last_name, segment_id: profile.segment_id }
-            ]
+              {
+                zip_code: profile.zip_code,
+                address: profile.address,
+                first_name: profile.first_name,
+                last_name: profile.last_name,
+                segment_id: profile.segment_id,
+              },
+            ],
           },
         });
 
@@ -1211,7 +1488,8 @@ export async function updateKlaviyoProfiles() {
       }
 
       // Check if profiles are in Robinson
-      const profilesToAddInRobinson = await returnProfilesInRobinson(profilesToAdd);
+      const profilesToAddInRobinson =
+        await returnProfilesInRobinson(profilesToAdd);
       profilesToAdd.map((profile) => {
         if (profilesToAddInRobinson.includes(profile)) {
           profile.in_robinson = true;
@@ -1244,8 +1522,8 @@ export async function periodicallySendLetters() {
         },
         include: {
           design: true,
-        }
-      })
+        },
+      });
 
       for (const campaign of campaigns) {
         const recentProfileIds = await getRecentProfileIds(user);
@@ -1268,21 +1546,39 @@ export async function periodicallySendLetters() {
           },
         });
 
-        if (!segment || segment.profiles.length === 0 || !campaign.design || !campaign.design.scene) {
+        if (
+          !segment ||
+          segment.profiles.length === 0 ||
+          !campaign.design ||
+          !campaign.design.scene
+        ) {
           continue;
         }
 
         // if there is a profile with id "additional-revenue-{campaign.id}", then remove it
-        const updatedProfiles = segment.profiles.filter((profile) => profile.id !== `additional-revenue-${campaign.id}`);
+        const updatedProfiles = segment.profiles.filter(
+          (profile) => profile.id !== `additional-revenue-${campaign.id}`,
+        );
 
         try {
           if (!segment.demo) {
-            await sendLettersForNonDemoUser(campaign.user_id, updatedProfiles, campaign.design.scene, campaign.id)
+            await sendLettersForNonDemoUser(
+              campaign.user_id,
+              updatedProfiles,
+              campaign.design.scene,
+              campaign.id,
+            );
           } else {
-            await sendLettersForDemoUser(updatedProfiles, campaign.id, campaign.user_id)
+            await sendLettersForDemoUser(
+              updatedProfiles,
+              campaign.id,
+              campaign.user_id,
+            );
           }
         } catch (error: any) {
-          logtail.error(`An error occured while trying to periodically activate a campaign with id ${campaign.id}`);
+          logtail.error(
+            `An error occured while trying to periodically activate a campaign with id ${campaign.id}`,
+          );
           continue;
         }
       }
@@ -1318,7 +1614,7 @@ export function generateUniqueFiveDigitId() {
 
 export async function getKlaviyoSegmentProfilesBySegmentId(
   segmentId: string,
-  klaviyoApiKey: string
+  klaviyoApiKey: string,
 ) {
   const url = `https://a.klaviyo.com/api/segments/${segmentId}/profiles/?page[size]=100`;
   const options = {
@@ -1351,19 +1647,41 @@ export async function getKlaviyoSegmentProfilesBySegmentId(
           city &&
           zip &&
           country &&
-          ["denmark", "danmark", "sweden", "sverige", "germany", "tyskland"].includes(country.toLowerCase())
+          [
+            "denmark",
+            "danmark",
+            "sweden",
+            "sverige",
+            "germany",
+            "tyskland",
+          ].includes(country.toLowerCase())
         ) {
           allProfiles.push(profile);
         } else {
-          if (!first_name) missingFields['first_name'] = (missingFields['first_name'] || 0) + 1;
-          if (!last_name) missingFields['last_name'] = (missingFields['last_name'] || 0) + 1;
-          if (!address1) missingFields['address1'] = (missingFields['address1'] || 0) + 1;
-          if (!city) missingFields['city'] = (missingFields['city'] || 0) + 1;
-          if (!zip) missingFields['zip'] = (missingFields['zip'] || 0) + 1;
-          if (!country) missingFields['country'] = (missingFields['country'] || 0) + 1;
+          if (!first_name)
+            missingFields["first_name"] =
+              (missingFields["first_name"] || 0) + 1;
+          if (!last_name)
+            missingFields["last_name"] = (missingFields["last_name"] || 0) + 1;
+          if (!address1)
+            missingFields["address1"] = (missingFields["address1"] || 0) + 1;
+          if (!city) missingFields["city"] = (missingFields["city"] || 0) + 1;
+          if (!zip) missingFields["zip"] = (missingFields["zip"] || 0) + 1;
+          if (!country)
+            missingFields["country"] = (missingFields["country"] || 0) + 1;
           // Skip profiles where country is not Denmark, Danmark, Sweden, Sverige, Germany or Tyskland
-          if (country && !["denmark", "danmark", "sweden", "sverige", "germany", "tyskland"].includes(country.toLowerCase())) {
-            missingFields['country'] = (missingFields['country'] || 0) + 1;
+          if (
+            country &&
+            ![
+              "denmark",
+              "danmark",
+              "sweden",
+              "sverige",
+              "germany",
+              "tyskland",
+            ].includes(country.toLowerCase())
+          ) {
+            missingFields["country"] = (missingFields["country"] || 0) + 1;
           }
           skippedProfiles.push(profile);
         }
@@ -1376,7 +1694,7 @@ export async function getKlaviyoSegmentProfilesBySegmentId(
     await new Promise((resolve) => setTimeout(resolve, 1000 / 75));
   }
 
-  let reason = '';
+  let reason = "";
   for (const field in missingFields) {
     reason += `${field} (x${missingFields[field]}), `;
   }
@@ -1384,7 +1702,6 @@ export async function getKlaviyoSegmentProfilesBySegmentId(
 
   return { validProfiles: allProfiles, skippedProfiles, reason };
 }
-
 
 export function detectDelimiter(line: string): string {
   const delimiters = [",", ";", "\t"];
@@ -1413,26 +1730,30 @@ export function splitCSVLine(line: string, delimiter: string): string[] {
   result.push(line.substring(startValueIndex).trim());
 
   return result.map((value) =>
-    value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value
+    value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value,
   );
 }
 
 export function validateCountry(country: string): boolean {
-  return country.toLowerCase() === "denmark" || country.toLowerCase() === "danmark" || country.toLowerCase() === "sweden" || country.toLowerCase() === "sverige" || country.toLowerCase() === "germany" || country.toLowerCase() === "tyskland";
+  return (
+    country.toLowerCase() === "denmark" ||
+    country.toLowerCase() === "danmark" ||
+    country.toLowerCase() === "sweden" ||
+    country.toLowerCase() === "sverige" ||
+    country.toLowerCase() === "germany" ||
+    country.toLowerCase() === "tyskland"
+  );
 }
 
 export async function checkIfProfileIsInRobinson(profile: ProfileToAdd) {
-  const streetName = profile.address
-    .match(/\D+/g)?.[0]
-    .trim()
-    .toLowerCase();
+  const streetName = profile.address.match(/\D+/g)?.[0].trim().toLowerCase();
   const firstName = profile.first_name.toLowerCase();
   const lastName = profile.last_name.toLowerCase();
   const zip = profile.zip_code;
   const uniqueIdentifier = `${firstName},${lastName},${streetName},${zip}`;
 
   const response = await fetch(
-    "https://ypvaugzxzbcnyeun.public.blob.vercel-storage.com/robinson-cleaned-modified-jAzirx8qMWVzJ1DPEEIqct82TSyuVU.csv"
+    "https://ypvaugzxzbcnyeun.public.blob.vercel-storage.com/robinson-cleaned-modified-jAzirx8qMWVzJ1DPEEIqct82TSyuVU.csv",
   );
 
   if (!response || !response.body) {
@@ -1511,7 +1832,9 @@ async function getRecentProfileIds(user: User): Promise<string[]> {
       hasMore = false;
     }
 
-    recentProfileIds = recentProfileIds.concat(recentProfiles.map(profile => profile.id));
+    recentProfileIds = recentProfileIds.concat(
+      recentProfiles.map((profile) => profile.id),
+    );
     skip += BATCH_SIZE;
   }
 

@@ -8,6 +8,7 @@ import {
 } from "../errors";
 import argon2 from "argon2";
 import { authenticateToken } from "./middleware";
+import { supabase } from "../constants";
 
 const router = Router();
 
@@ -68,57 +69,6 @@ router.get("/users/:id", authenticateToken, async (req, res) => {
   if (!foundUser) return UserNotFoundError;
 
   return res.status(200).json(foundUser);
-});
-
-router.post("/users", async (req, res) => {
-  const {
-    user_id,
-    first_name,
-    last_name,
-    company,
-    email,
-    password,
-    role,
-    demo,
-  } = req.body;
-  if (!user_id) return MissingRequiredParametersError;
-
-  const user = await prisma.user.findUnique({
-    where: { id: user_id },
-  });
-  if (!user) return UserNotFoundError;
-
-  // Check that user has the correct role
-  if (user.role !== "admin") {
-    return res.status(403).json({ error: InsufficientRightsError });
-  }
-
-  // Check if the created user already exists if email is provided
-  if (email) {
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
-    });
-    if (existingUser) {
-      return res.status(400).json({ error: UserAlreadyExistsError });
-    }
-  }
-
-  const hashedPassword = await argon2.hash(password);
-
-  // Create the new user
-  await prisma.user.create({
-    data: {
-      first_name,
-      last_name,
-      company,
-      email,
-      password: hashedPassword,
-      role,
-      demo,
-    },
-  });
-
-  return res.status(201).json({ success: "Bruger oprettet" });
 });
 
 router.put(`/users/:id`, async (req, res) => {
