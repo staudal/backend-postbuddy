@@ -1,16 +1,38 @@
-import { Router } from 'express';
-import { logError, logtail, logWarn, prisma } from '../app';
-import { CampaignNotFoundError, DesignNotFoundError, FailedToBillUserError, FailedToCreateCampaignError, FailedToGeneratePdfError, FailedToSendPdfToPrintPartnerError, InsufficientRightsError, InternalServerError, MissingAddressError, MissingRequiredParametersError, MissingSubscriptionError, ProfilesNotFoundError, SegmentNotFoundError, UserNotFoundError } from '../errors';
-import { billUserForLettersSent, generateCsvAndSendToPrintPartner, generatePdf, periodicallySendLetters, sendPdfToPrintPartner } from '../functions';
-import { Campaign } from '@prisma/client';
-import { pricePerLetter, testProfile } from '../constants';
-import { authenticateToken } from './middleware';
+import { Router } from "express";
+import { logError, logtail, logWarn, prisma } from "../app";
+import {
+  CampaignNotFoundError,
+  DesignNotFoundError,
+  FailedToBillUserError,
+  FailedToCreateCampaignError,
+  FailedToGeneratePdfError,
+  FailedToSendPdfToPrintPartnerError,
+  InsufficientRightsError,
+  InternalServerError,
+  MissingAddressError,
+  MissingRequiredParametersError,
+  MissingSubscriptionError,
+  ProfilesNotFoundError,
+  SegmentNotFoundError,
+  UserNotFoundError,
+} from "../errors";
+import {
+  billUserForLettersSent,
+  generateCsvAndSendToPrintPartner,
+  generatePdf,
+  periodicallySendLetters,
+  sendPdfToPrintPartner,
+} from "../functions";
+import { Campaign } from "@prisma/client";
+import { pricePerLetter, testProfile } from "../constants";
+import { authenticateToken } from "./middleware";
 
 const router = Router();
 
-router.get('/', authenticateToken, async (req, res) => {
+router.get("/", authenticateToken, async (req, res) => {
   const user_id = req.body.user_id;
-  if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
+  if (!user_id)
+    return res.status(400).json({ error: MissingRequiredParametersError });
 
   try {
     const dbUser = await prisma.user.findUnique({
@@ -38,19 +60,19 @@ router.get('/', authenticateToken, async (req, res) => {
                       select: {
                         amount: true,
                         created_at: true,
-                      }
+                      },
                     },
-                  }
-                }
+                  },
+                },
               },
               where: {
                 letter_sent: true,
                 letter_sent_at: {
                   not: null,
                 },
-              }
-            }
-          }
+              },
+            },
+          },
         },
       },
       orderBy: {
@@ -60,23 +82,28 @@ router.get('/', authenticateToken, async (req, res) => {
 
     // Process the data on the backend
     const campaignData = campaigns.map((campaign) => {
-      const lettersSentCount = campaign.segment.profiles.filter(profile => profile.letter_sent).length;
-      const campaignRevenue = campaign.segment.profiles.reduce((acc, profile) => {
-        const profileRevenue = profile.orders.reduce((acc, orderProfile) => {
-          if (profile.letter_sent_at) {
-            const orderDate = new Date(orderProfile.order.created_at);
-            const letterSentDate = new Date(profile.letter_sent_at);
+      const lettersSentCount = campaign.segment.profiles.filter(
+        (profile) => profile.letter_sent,
+      ).length;
+      const campaignRevenue = campaign.segment.profiles.reduce(
+        (acc, profile) => {
+          const profileRevenue = profile.orders.reduce((acc, orderProfile) => {
+            if (profile.letter_sent_at) {
+              const orderDate = new Date(orderProfile.order.created_at);
+              const letterSentDate = new Date(profile.letter_sent_at);
 
-            // Only include orders where the order date is after the letter sent date
-            if (orderDate > letterSentDate) {
-              return acc + (orderProfile.order.amount || 0);
+              // Only include orders where the order date is after the letter sent date
+              if (orderDate > letterSentDate) {
+                return acc + (orderProfile.order.amount || 0);
+              }
             }
-          }
-          return acc;
-        }, 0);
+            return acc;
+          }, 0);
 
-        return acc + profileRevenue;
-      }, 0);
+          return acc + profileRevenue;
+        },
+        0,
+      );
 
       const adSpend = lettersSentCount * pricePerLetter;
       const roas = campaignRevenue / adSpend;
@@ -96,10 +123,20 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-router.get('/:id', authenticateToken, async (req, res) => {
+router.get("/:id", authenticateToken, async (req, res) => {
   const user_id = req.body.user_id;
   const id = req.params.id;
-  if (!user_id || !id) return res.status(400).json({ error: MissingRequiredParametersError });
+
+  const user = await prisma.user.findUnique({
+    where: { id: user_id },
+  });
+
+  if (!user) return res.status(404).json({ error: UserNotFoundError });
+
+  if (user.role !== "admin") {
+    if (!user_id || !id)
+      return res.status(400).json({ error: MissingRequiredParametersError });
+  }
 
   const campaign = await prisma.campaign.findUnique({
     where: { id: id },
@@ -130,7 +167,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
             },
             where: {
               letter_sent: true,
-            }
+            },
           },
         },
       },
@@ -153,18 +190,27 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
   for (const profile of campaign.segment.profiles) {
     if (profile.letter_sent) letters_sent++;
-    const orders = profile.orders.filter(order => (
-      profile.letter_sent_at !== null && order.order.created_at > profile.letter_sent_at && order.order.amount > 0
-    ));
+    const orders = profile.orders.filter(
+      (order) =>
+        profile.letter_sent_at !== null &&
+        order.order.created_at > profile.letter_sent_at &&
+        order.order.amount > 0,
+    );
     if (orders.length > 0) {
       profilesWithPurchase++;
       conversions++;
       if (profile.letter_sent_at) {
-        totalDaysToFirstPurchase += (new Date(orders[0].order.created_at).getTime() - new Date(profile.letter_sent_at).getTime()) / (1000 * 3600 * 24);
+        totalDaysToFirstPurchase +=
+          (new Date(orders[0].order.created_at).getTime() -
+            new Date(profile.letter_sent_at).getTime()) /
+          (1000 * 3600 * 24);
       } else {
         totalDaysToFirstPurchase += 0;
       }
-      campaign_revenue += orders.reduce((acc, order) => acc + order.order.amount, 0);
+      campaign_revenue += orders.reduce(
+        (acc, order) => acc + order.order.amount,
+        0,
+      );
     }
   }
 
@@ -174,7 +220,9 @@ router.get('/:id', authenticateToken, async (req, res) => {
   // Calculate the return on ad spend for the campaign
   const roas = ad_spend ? campaign_revenue / ad_spend : 0;
 
-  const avg_days_to_first_purchase = profilesWithPurchase ? totalDaysToFirstPurchase / profilesWithPurchase : 0;
+  const avg_days_to_first_purchase = profilesWithPurchase
+    ? totalDaysToFirstPurchase / profilesWithPurchase
+    : 0;
 
   const updatedCampaign = {
     id: campaign.id,
@@ -200,11 +248,20 @@ router.get('/:id', authenticateToken, async (req, res) => {
 });
 
 // USED FOR CAMPAIGN DETAILS PAGE (to fetch all profiles in a campaign)
-router.get('/:id/profiles', authenticateToken, async (req, res) => {
+router.get("/:id/profiles", authenticateToken, async (req, res) => {
+  const user_id = req.body.user_id;
   const page = req.query.page ? parseInt(req.query.page as string) : 1;
   const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
   const offset = (page - 1) * limit;
-  const sort = req.query.sort ? (req.query.sort as any).split(':') : ['created_at', 'desc'];
+  const sort = req.query.sort
+    ? (req.query.sort as any).split(":")
+    : ["created_at", "desc"];
+
+  const user = await prisma.user.findUnique({
+    where: { id: user_id },
+  });
+
+  if (!user) return res.status(404).json({ error: UserNotFoundError });
 
   const campaignId = req.params.id;
 
@@ -235,9 +292,14 @@ router.get('/:id/profiles', authenticateToken, async (req, res) => {
   const processedProfiles = allProfiles.map((profile: any) => {
     const full_name = `${profile.first_name} ${profile.last_name}`;
 
-    const revenue = (profile.orders || []).filter((order: any) => (
-      profile.letter_sent_at !== null && order.order.created_at > profile.letter_sent_at && order.order.amount > 0
-    )).reduce((acc: number, order: any) => acc + order.order.amount, 0);
+    const revenue = (profile.orders || [])
+      .filter(
+        (order: any) =>
+          profile.letter_sent_at !== null &&
+          order.order.created_at > profile.letter_sent_at &&
+          order.order.amount > 0,
+      )
+      .reduce((acc: number, order: any) => acc + order.order.amount, 0);
 
     return {
       ...profile,
@@ -248,7 +310,7 @@ router.get('/:id/profiles', authenticateToken, async (req, res) => {
 
   // Sort the profiles
   const sortedProfiles = processedProfiles.sort((a, b) => {
-    if (sort[1] === 'asc') {
+    if (sort[1] === "asc") {
       return a[sort[0]] > b[sort[0]] ? 1 : -1;
     } else {
       return a[sort[0]] < b[sort[0]] ? 1 : -1;
@@ -261,9 +323,18 @@ router.get('/:id/profiles', authenticateToken, async (req, res) => {
   return res.status(200).json(paginatedProfiles);
 });
 
-router.post('/', authenticateToken, async (req, res) => {
-  const { user_id, name, type, segment_id, design_id, discountCodes, start_date } = req.body;
-  if (!name || !user_id || !type || !segment_id || !design_id || !discountCodes) return res.status(400).json({ error: MissingRequiredParametersError });
+router.post("/", authenticateToken, async (req, res) => {
+  const {
+    user_id,
+    name,
+    type,
+    segment_id,
+    design_id,
+    discountCodes,
+    start_date,
+  } = req.body;
+  if (!name || !user_id || !type || !segment_id || !design_id || !discountCodes)
+    return res.status(400).json({ error: MissingRequiredParametersError });
 
   const segment = await prisma.segment.findUnique({
     where: { id: segment_id, user_id },
@@ -271,21 +342,26 @@ router.post('/', authenticateToken, async (req, res) => {
       user: {
         include: {
           subscription: true,
-        }
+        },
       },
       profiles: true,
-    }
+    },
   });
   if (!segment) return res.status(404).json({ error: SegmentNotFoundError }); // Segment not found
-  if (segment.profiles.length === 0) return res.status(404).json({ error: ProfilesNotFoundError }); // No profiles found
-  if (!segment.user.subscription && segment.demo === false) return res.status(400).json({ error: MissingSubscriptionError }); // User has no subscription
+  if (segment.profiles.length === 0)
+    return res.status(404).json({ error: ProfilesNotFoundError }); // No profiles found
+  if (!segment.user.subscription && segment.demo === false)
+    return res.status(400).json({ error: MissingSubscriptionError }); // User has no subscription
 
   const design = await prisma.design.findUnique({
     where: { id: design_id },
   });
-  if (!design || !design.scene) return res.status(404).json({ error: DesignNotFoundError });
+  if (!design || !design.scene)
+    return res.status(404).json({ error: DesignNotFoundError });
 
-  const startDate = start_date ? new Date(start_date) : new Date().toISOString();
+  const startDate = start_date
+    ? new Date(start_date)
+    : new Date().toISOString();
   let campaign: Campaign | null;
   try {
     campaign = await prisma.campaign.create({
@@ -300,19 +376,23 @@ router.post('/', authenticateToken, async (req, res) => {
         discount_codes: discountCodes || [],
         start_date: startDate,
         demo: segment.demo,
-      }
-    })
+      },
+    });
   } catch (error: any) {
     return res.status(500).json({ error: FailedToCreateCampaignError });
   }
 
-  return res.status(201).json({ success: "Kampagnen er blevet oprettet og afventer afsendelse", campaign });
-})
+  return res.status(201).json({
+    success: "Kampagnen er blevet oprettet og afventer afsendelse",
+    campaign,
+  });
+});
 
-router.put('/:id', authenticateToken, async (req, res) => {
+router.put("/:id", authenticateToken, async (req, res) => {
   const { user_id, status, design_id } = req.body;
   const id = req.params.id;
-  if (!user_id) return res.status(400).json({ error: MissingRequiredParametersError });
+  if (!user_id)
+    return res.status(400).json({ error: MissingRequiredParametersError });
 
   const campaign = await prisma.campaign.findUnique({
     where: { id: id },
@@ -326,16 +406,17 @@ router.put('/:id', authenticateToken, async (req, res) => {
     data: {
       status: status || campaign.status,
       design_id: design_id || campaign.design_id,
-    }
+    },
   });
 
   return res.status(200).json({ success: "Kampagnen er blevet opdateret" });
-})
+});
 
-router.delete('/:id', authenticateToken, async (req, res) => {
+router.delete("/:id", authenticateToken, async (req, res) => {
   const { user_id } = req.body;
   const id = req.params.id;
-  if (!user_id || !id) return res.status(400).json({ error: MissingRequiredParametersError });
+  if (!user_id || !id)
+    return res.status(400).json({ error: MissingRequiredParametersError });
 
   const campaign = await prisma.campaign.findUnique({
     where: { id: id },
@@ -349,15 +430,16 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   });
 
   return res.status(200).json({ success: "Kampagnen er blevet slettet" });
-})
+});
 
-router.get('/force-send-letters', authenticateToken, async (req, res) => {
+router.get("/force-send-letters", authenticateToken, async (req, res) => {
   await periodicallySendLetters();
-})
+});
 
-router.post('/test-letter', authenticateToken, async (req, res) => {
+router.post("/test-letter", authenticateToken, async (req, res) => {
   const { user_id, design_id } = req.body;
-  if (!user_id || !design_id) return res.status(400).json({ error: MissingRequiredParametersError });
+  if (!user_id || !design_id)
+    return res.status(400).json({ error: MissingRequiredParametersError });
 
   const user = await prisma.user.findUnique({
     where: { id: user_id },
@@ -366,10 +448,10 @@ router.post('/test-letter', authenticateToken, async (req, res) => {
 
   const design = await prisma.design.findUnique({
     where: { id: design_id },
-  })
-  if (!design || !design.scene) return DesignNotFoundError
+  });
+  if (!design || !design.scene) return DesignNotFoundError;
 
-  if (!user.address || !user.zip_code || !user.city) MissingAddressError
+  if (!user.address || !user.zip_code || !user.city) MissingAddressError;
 
   // Try to bill the user for the letters sent
   try {
@@ -383,7 +465,9 @@ router.post('/test-letter', authenticateToken, async (req, res) => {
   try {
     pdf = await generatePdf([testProfile], design.scene);
   } catch (error: any) {
-    logtail.error(`An error occured while trying to generate a pdf for a test letter for user ${user_id}`);
+    logtail.error(
+      `An error occured while trying to generate a pdf for a test letter for user ${user_id}`,
+    );
     return res.status(500).json({ error: FailedToGeneratePdfError });
   }
 
@@ -394,18 +478,24 @@ router.post('/test-letter', authenticateToken, async (req, res) => {
   try {
     await sendPdfToPrintPartner(pdf, user_id, dateString);
   } catch (error: any) {
-    logtail.error(`An error occured while trying to send a test letter pdf to the print partner for user ${user_id}`);
+    logtail.error(
+      `An error occured while trying to send a test letter pdf to the print partner for user ${user_id}`,
+    );
     return res.status(500).json({ error: FailedToSendPdfToPrintPartnerError });
   }
 
   try {
     await generateCsvAndSendToPrintPartner([testProfile], user_id, dateString);
   } catch (error: any) {
-    logtail.error(`An error occured while trying to generate a test letter csv and send it to the print partner for user ${user_id}`);
+    logtail.error(
+      `An error occured while trying to generate a test letter csv and send it to the print partner for user ${user_id}`,
+    );
     return res.status(500).json({ error: FailedToSendPdfToPrintPartnerError });
   }
 
-  return res.status(201).json({ success: "Testbrevet er blevet sendt til produktion" });
-})
+  return res
+    .status(201)
+    .json({ success: "Testbrevet er blevet sendt til produktion" });
+});
 
 export default router;
