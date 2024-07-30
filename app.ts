@@ -4,7 +4,6 @@ import cors from "cors";
 import { PrismaClient } from "@prisma/client";
 import cron from "node-cron";
 import { authenticateToken } from "./routes/middleware";
-import indexRouter from "./routes/index";
 import shopifyRouter from "./routes/shopify";
 import usersRouter from "./routes/users";
 import userRouter from "./routes/user";
@@ -96,7 +95,6 @@ if (process.env.NODE_ENV === "production") {
 }
 
 // Setup routes
-app.use("/", indexRouter);
 app.use("/webhooks", webhooksRouter);
 app.use("/shopify", shopifyRouter);
 
