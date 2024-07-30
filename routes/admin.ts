@@ -1,17 +1,11 @@
 import { Router } from "express";
 import { prisma } from "../app";
-import {
-  InsufficientRightsError,
-  MissingRequiredParametersError,
-  UserAlreadyExistsError,
-  UserNotFoundError,
-} from "../errors";
-import argon2 from "argon2";
+import { InsufficientRightsError, UserNotFoundError } from "../errors";
 import { authenticateToken } from "./middleware";
-import { supabase } from "../constants";
 
 const router = Router();
 
+// USED FOR ADMIN PANEL
 router.get("/users", authenticateToken, async (req, res) => {
   const { user_id } = req.body;
   const page = req.query.page ? parseInt(req.query.page as string) : 1;
@@ -47,6 +41,7 @@ router.get("/users", authenticateToken, async (req, res) => {
   return res.status(200).json({ users, total });
 });
 
+// USED FOR ADMIN PANEL
 router.get("/users/:id", authenticateToken, async (req, res) => {
   const { user_id } = req.body;
   const id = req.params.id;
@@ -71,49 +66,7 @@ router.get("/users/:id", authenticateToken, async (req, res) => {
   return res.status(200).json(foundUser);
 });
 
-router.put(`/users/:id`, async (req, res) => {
-  const { user_id, first_name, last_name, company, email, role, demo } =
-    req.body;
-  const id = req.params.id;
-  if (!user_id || !id) return MissingRequiredParametersError;
-
-  // Check if user is an admin
-  const user = await prisma.user.findUnique({
-    where: { id: user_id },
-  });
-  if (!user) return UserNotFoundError;
-
-  if (user.role !== "admin") {
-    return res.status(403).json({ error: InsufficientRightsError });
-  }
-
-  // check if email already exists if it's provided
-  if (email) {
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
-    });
-    if (existingUser && existingUser.id !== id) {
-      return res.status(400).json({ error: UserAlreadyExistsError });
-    }
-  }
-
-  await prisma.user.update({
-    where: {
-      id,
-    },
-    data: {
-      first_name,
-      last_name,
-      email,
-      company,
-      role,
-      demo,
-    },
-  });
-
-  return res.status(200).json({ success: "Bruger opdateret" });
-});
-
+// USED FOR ADMIN PANEL
 router.get("/campaigns", authenticateToken, async (req, res) => {
   const { user_id } = req.body;
   const id = req.query.id as string;
@@ -157,6 +110,7 @@ router.get("/campaigns", authenticateToken, async (req, res) => {
   return res.status(200).json({ campaigns, total });
 });
 
+// USED FOR ADMIN PANEL
 router.get("/segments", authenticateToken, async (req, res) => {
   const { user_id } = req.body;
   const id = req.query.id as string;
@@ -218,6 +172,7 @@ router.get("/segments", authenticateToken, async (req, res) => {
   return res.status(200).json({ segments, total });
 });
 
+// USED FOR ADMIN PANEL
 router.get("/designs", authenticateToken, async (req, res) => {
   const { user_id } = req.body;
   const id = req.query.id as string;
@@ -261,6 +216,7 @@ router.get("/designs", authenticateToken, async (req, res) => {
   return res.status(200).json({ designs, total });
 });
 
+// USED FOR ADMIN PANEL
 router.get("/integrations", authenticateToken, async (req, res) => {
   const { user_id } = req.body;
   const id = req.query.id as string;
@@ -304,6 +260,7 @@ router.get("/integrations", authenticateToken, async (req, res) => {
   return res.status(200).json({ integrations, total });
 });
 
+// USED FOR ADMIN PANEL
 router.get("/subscriptions", authenticateToken, async (req, res) => {
   const { user_id } = req.body;
   const id = req.query.id as string;

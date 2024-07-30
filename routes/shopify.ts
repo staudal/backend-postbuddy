@@ -20,7 +20,12 @@ router.post("/bulk-query-trigger", async (req, res) => {
 
     const user = await prisma.user.findUnique({
       where: { id: user_id },
-      include: { integrations: true, campaigns: true },
+      include: {
+        integrations: {
+          where: { type: "shopify" },
+        },
+        campaigns: true,
+      },
     });
 
     if (!user) {
@@ -34,11 +39,9 @@ router.post("/bulk-query-trigger", async (req, res) => {
     );
 
     if (!shopifyIntegration || !shopifyIntegration.token) {
-      return res
-        .status(400)
-        .json({
-          error: `Bruger med id ${user_id} har ikke en gyldig Shopify-integration`,
-        });
+      return res.status(400).json({
+        error: `Bruger med id ${user_id} har ikke en gyldig Shopify-integration`,
+      });
     }
 
     const currentDate = new Date();
@@ -128,11 +131,9 @@ router.post("/bulk-query-trigger", async (req, res) => {
     const data: any = await response.json();
 
     if (!response.ok) {
-      return res
-        .status(500)
-        .json({
-          error: `Der opstod en fejl under oprettelse af bulk query for bruger ${user.id}: ${data.errors}`,
-        });
+      return res.status(500).json({
+        error: `Der opstod en fejl under oprettelse af bulk query for bruger ${user.id}: ${data.errors}`,
+      });
     }
 
     logtail.info(`Triggered bulk query for user with email ${user.email}`);
@@ -141,7 +142,7 @@ router.post("/bulk-query-trigger", async (req, res) => {
       .status(200)
       .json({ message: `Bulk query oprettet for bruger ${user.id}` });
   } catch (error: any) {
-    logtail.error(error.message);
+    logtail.error(error + "POST /shopify/bulk-query-trigger");
     return res.status(500).json({ error: error.message });
   }
 });
@@ -157,7 +158,7 @@ router.post("/bulk-query-finished", async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { id: state as string },
     include: {
-      integrations: true,
+      integrations: { where: { type: "shopify" } },
       campaigns: {
         include: { segment: true },
       },
@@ -165,9 +166,6 @@ router.post("/bulk-query-finished", async (req, res) => {
   });
 
   if (!user) {
-    logtail.error(
-      `Processing bulk query failed because user with user_id ${state} does not exist`,
-    );
     return res
       .status(404)
       .json({ error: `Bruger med user_id ${state} findes ikke` });
@@ -178,14 +176,9 @@ router.post("/bulk-query-finished", async (req, res) => {
   )?.token;
 
   if (!shopifyToken) {
-    logtail.error(
-      `Processing bulk query failed because user with user_id ${state} does not have a valid Shopify integration`,
-    );
-    return res
-      .status(404)
-      .json({
-        error: `Bruger med user_id ${state} har ikke en gyldig Shopify-integration`,
-      });
+    return res.status(404).json({
+      error: `Bruger med user_id ${state} har ikke en gyldig Shopify-integration`,
+    });
   }
 
   let url: string;
@@ -197,7 +190,7 @@ router.post("/bulk-query-finished", async (req, res) => {
       user.id,
     );
   } catch (error: any) {
-    logtail.error(error.message);
+    logtail.error(error + "POST /shopify/bulk-query-finished");
     return res.status(error.statusCode).json({ error: error.message });
   }
 
@@ -205,14 +198,14 @@ router.post("/bulk-query-finished", async (req, res) => {
   try {
     shopifyOrders = await fetchBulkOperationData(url, user.id);
   } catch (error: any) {
-    logtail.error(error.message);
+    logtail.error(error + "POST /shopify/bulk-query-finished");
     return res.status(error.statusCode).json({ error: error.message });
   }
 
   try {
     await saveOrders(user, shopifyOrders);
   } catch (error: any) {
-    logtail.error(error.message);
+    logtail.error(error + "POST /shopify/bulk-query-finished");
     return res.status(error.statusCode).json({ error: error.message });
   }
 
@@ -238,7 +231,7 @@ router.post("/bulk-query-finished", async (req, res) => {
   try {
     await processOrdersForCampaigns(user, allOrders);
   } catch (error: any) {
-    logtail.error(error.message);
+    logtail.error(error + "POST /shopify/bulk-query-finished");
     return res.status(error.statusCode).json({ error: error.message });
   }
 
