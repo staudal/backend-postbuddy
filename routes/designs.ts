@@ -251,6 +251,9 @@ router.post("/:id/upload", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: MissingRequiredParametersError });
     }
 
+    // if there is æøå in the filename, replace them with aeo
+    const sanitizedName = name.replace(/æ/g, "ae").replace(/ø/g, "oe").replace(/å/g, "aa");
+
     await prisma.$transaction(async (prisma) => {
       const design = await prisma.design.findUnique({
         where: { id },
@@ -262,7 +265,7 @@ router.post("/:id/upload", upload.single("file"), async (req, res) => {
 
       const s3Params = {
         Bucket: "uploads",
-        Key: `${id}/${name}`,
+        Key: `${id}/${sanitizedName}`,
         Body: file.buffer,
         ContentType: format,
       };
