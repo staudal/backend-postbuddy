@@ -29,7 +29,7 @@ router.get("/", async (req, res) => {
 
   // add is_subscribed to user
   const subscription = await prisma.subscription.findFirst({
-    where: { user_id },
+    where: { user_id, status: "active" },
   });
 
   if (subscription) {
