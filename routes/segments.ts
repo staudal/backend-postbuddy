@@ -450,23 +450,17 @@ router.post("/csv", async (req, res) => {
   }); // 20 MB
 
   form.parse(req, async (err, fields, files) => {
+    if (err) {
+      return res.status(500).json({ error: ParsingError });
+    }
+
+    const segmentName = getSegmentName(fields);
+    if (!user_id || !segmentName) {
+      return res.status(400).json({ error: MissingRequiredParametersError });
+    }
+
     try {
-      if (err) {
-        return res.status(500).json({ error: ParsingError });
-      }
-
-      const segmentName = Array.isArray(fields.segmentName)
-        ? fields.segmentName[0]
-        : fields.segmentName;
-
-      if (!user_id || !segmentName) {
-        return res.status(400).json({ error: MissingRequiredParametersError });
-      }
-
-      const user = await prisma.user.findUnique({
-        where: { id: user_id },
-      });
-
+      const user = await getUser(user_id);
       if (!user) {
         return res.status(404).json({ error: UserNotFoundError });
       }
@@ -476,181 +470,246 @@ router.post("/csv", async (req, res) => {
       }
 
       const file = Array.isArray(files.file) ? files.file[0] : files.file;
-
-      const fileBuffer = await fs.promises.readFile(file.filepath);
-      const fileText = new TextDecoder("UTF-8").decode(fileBuffer);
-
+      const fileText = await readFile(file.filepath);
       if (fileText.includes("�")) {
         return res.status(400).json({ error: ParsingError });
       }
 
-      // Parse CSV text using PapaParse
-      const { data, errors, meta } = Papa.parse(fileText, {
-        header: true,
-        skipEmptyLines: true,
-      });
-
+      const { data, errors, meta } = parseCSV(fileText);
       if (errors.length) {
         return res.status(400).json({ error: ParsingError });
       }
-
-      const expectedHeaders = [
-        "first_name",
-        "last_name",
-        "address",
-        "zip_code",
-        "city",
-        "email",
-        "country",
-        "custom_variable",
-      ];
 
       const headers = meta.fields;
       if (!headers) {
         return res.status(400).json({ error: ParsingError });
       }
 
-      const requiredHeaders = expectedHeaders.filter(
-        (header) => header !== "custom_variable",
-      );
-      const missingRequiredHeaders = requiredHeaders.filter(
-        (header) => !headers.includes(header),
-      );
-
-      if (missingRequiredHeaders.length > 0) {
+      // Validate the headers and make sure it contains the necessary fields
+      const missingHeaders = validateHeaders(headers);
+      if (missingHeaders.length > 0) {
         return res.status(400).json({
-          error: MISSING_HEADERS_ERROR(missingRequiredHeaders),
+          error: MISSING_HEADERS_ERROR(missingHeaders),
         });
       }
 
-      let rows = data
-        .map((row: any) => ({
-          first_name: row.first_name?.toLowerCase(),
-          last_name: row.last_name?.toLowerCase(),
-          email: row.email?.toLowerCase(),
-          address: row.address?.toLowerCase(),
-          zip: row.zip_code?.toLowerCase(),
-          city: row.city?.toLowerCase(),
-          country: row.country?.toLowerCase(),
-          custom_variable: row.custom_variable?.toLowerCase() || null,
-        }))
-        .filter((row) =>
-          Object.values(row).every((cell) => cell !== "" && cell !== undefined),
-        );
+      // Process the rows and filter out invalid profiles (lowercase, duplicates, unique, etc.)
+      const rows = processRows(data);
 
-      rows = rows.filter((row) =>
-        [
-          "denmark",
-          "danmark",
-          "sweden",
-          "sverige",
-          "germany",
-          "tyskland",
-        ].includes(row.country),
+      // Prepare the profiles to be added to the database
+      const profilesToAdd = prepareProfiles(rows);
+
+      // Check the profiles against the Robinson list and mark them accordingly
+      const profilesInRobinson = await returnProfilesInRobinson(profilesToAdd);
+      markProfilesInRobinson(profilesToAdd, profilesInRobinson);
+
+      // Create the segment and add the profiles to the database
+      const newSegmentWithProfiles = await createSegmentWithProfiles(
+        user,
+        segmentName,
+        profilesToAdd,
       );
 
-      const emailSet = new Set();
-      rows = rows.filter((profile) => {
-        if (emailSet.has(profile.email)) {
-          return false;
-        } else {
-          emailSet.add(profile.email);
-          return true;
-        }
-      });
-
-      const uniqueProfilesSet = new Set();
-      rows = rows.filter((profile) => {
-        const uniqueProfileKey = JSON.stringify({
-          address: profile.address,
-          zip: profile.zip,
-          first_name: profile.first_name,
-          last_name: profile.last_name,
-        });
-
-        if (uniqueProfilesSet.has(uniqueProfileKey)) {
-          return false;
-        } else {
-          uniqueProfilesSet.add(uniqueProfileKey);
-          return true;
-        }
-      });
-
-      const profilesToAdd = rows.map((row) => ({
-        first_name: row.first_name,
-        last_name: row.last_name,
-        email: row.email,
-        address: row.address,
-        city: row.city,
-        zip_code: row.zip,
-        country: row.country,
-        segment_id: "temp",
-        in_robinson: false,
-        custom_variable: row.custom_variable,
-      }));
-
-      const uniqueProfilesToAdd = Array.from(
-        profilesToAdd
-          .reduce(
-            (map, profile) => map.set(JSON.stringify(profile), profile),
-            new Map(),
-          )
-          .values(),
-      );
-
-      const profilesInRobinson =
-        await returnProfilesInRobinson(uniqueProfilesToAdd);
-
-      uniqueProfilesToAdd.forEach((profile) => {
-        if (
-          profilesInRobinson.some(
-            (robinsonProfile) => robinsonProfile.email === profile.email,
-          )
-        ) {
-          profile.in_robinson = true;
-        }
-      });
-
-      await prisma.$transaction(async (prisma) => {
-        const newSegment = await prisma.segment.create({
-          data: {
-            name: segmentName,
-            type: "csv",
-            user_id: user.id,
-            demo: user.demo,
-          },
-        });
-
-        uniqueProfilesToAdd.forEach((profile) => {
-          profile.segment_id = newSegment.id;
-        });
-
-        await prisma.profile.createMany({
-          data: uniqueProfilesToAdd,
-        });
-
-        const newSegmentWithProfiles = (await prisma.segment.findUnique({
-          where: { id: newSegment.id },
-        })) as any;
-
-        // Add profile_count and in_robinson_count to the segment
-        const profiles = await prisma.profile.findMany({
-          where: { segment_id: newSegment.id },
-        });
-
-        newSegmentWithProfiles.profile_count = profiles.length;
-        newSegmentWithProfiles.in_robinson_count = profiles.filter(
-          (profile) => profile.in_robinson,
-        ).length;
-
-        return res.status(200).json(newSegmentWithProfiles);
-      });
+      return res.status(200).json(newSegmentWithProfiles);
     } catch (error: any) {
       logtail.error(error + "POST /segments/csv");
       return res.status(500).json({ error: InternalServerError });
     }
   });
 });
+
+function getSegmentName(fields: any) {
+  return Array.isArray(fields.segmentName)
+    ? fields.segmentName[0]
+    : fields.segmentName;
+}
+
+async function getUser(user_id: string) {
+  return await prisma.user.findUnique({
+    where: { id: user_id },
+  });
+}
+
+async function readFile(filepath: string) {
+  const fileBuffer = await fs.promises.readFile(filepath);
+  return new TextDecoder("UTF-8").decode(fileBuffer);
+}
+
+function parseCSV(fileText: string) {
+  return Papa.parse(fileText, {
+    header: true,
+    skipEmptyLines: true,
+  });
+}
+
+function validateHeaders(headers: string[]) {
+  const expectedHeaders = [
+    "first_name",
+    "last_name",
+    "address",
+    "zip_code",
+    "city",
+    "email",
+    "country",
+    "custom_variable",
+  ];
+
+  const requiredHeaders = expectedHeaders.filter(
+    (header) => header !== "custom_variable",
+  );
+  return requiredHeaders.filter((header) => !headers.includes(header));
+}
+
+function processRows(data: any) {
+  const allowedCountries = new Set([
+    "denmark",
+    "danmark",
+    "sweden",
+    "sverige",
+    "germany",
+    "tyskland",
+  ]);
+
+  // Function to split names and adjust first and last names
+  const splitNames = (row: any) => {
+    const firstNames = row.first_name?.toLowerCase().split(" ") || [];
+    const firstName = firstNames.shift() || ""; // Get the first name
+    const lastName =
+      firstNames.length > 0
+        ? `${firstNames.join(" ")} ${row.last_name?.toLowerCase()}`
+        : row.last_name?.toLowerCase();
+
+    return {
+      ...row,
+      first_name: firstName,
+      last_name: lastName,
+    };
+  };
+
+  // Function to filter unique emails
+  const uniqueByEmail = (rows: any[]) => {
+    const emailSet = new Set();
+    return rows.filter((profile) => {
+      if (emailSet.has(profile.email)) {
+        return false;
+      } else {
+        emailSet.add(profile.email);
+        return true;
+      }
+    });
+  };
+
+  // Function to filter unique profiles by address, zip, first name, and last name
+  const uniqueByProfile = (rows: any[]) => {
+    const uniqueProfilesSet = new Set();
+    return rows.filter((profile) => {
+      const uniqueProfileKey = JSON.stringify({
+        address: profile.address,
+        zip: profile.zip,
+        first_name: profile.first_name,
+        last_name: profile.last_name,
+      });
+
+      if (uniqueProfilesSet.has(uniqueProfileKey)) {
+        return false;
+      } else {
+        uniqueProfilesSet.add(uniqueProfileKey);
+        return true;
+      }
+    });
+  };
+
+  return data
+    .map((row: any) => splitNames(row)) // Adjust first and last names
+    .map((row: any) => ({
+      first_name: row.first_name?.toLowerCase(),
+      last_name: row.last_name?.toLowerCase(),
+      email: row.email?.toLowerCase(),
+      address: row.address?.toLowerCase(),
+      zip: row.zip_code?.toLowerCase(),
+      city: row.city?.toLowerCase(),
+      country: row.country?.toLowerCase(),
+      custom_variable: row.custom_variable?.toLowerCase() || null,
+    }))
+    .filter((row: any) =>
+      Object.values(row).every(
+        (cell) => cell !== "" && cell !== null && cell !== undefined,
+      ),
+    ) // Remove rows with null or empty data
+    .filter((row: any) => allowedCountries.has(row.country)) // Filter out incorrect country rows
+    .filter(uniqueByEmail) // Filter out duplicate emails
+    .filter(uniqueByProfile); // Filter out duplicate profiles
+}
+
+function prepareProfiles(rows: any) {
+  return rows.map((row: any) => ({
+    first_name: row.first_name,
+    last_name: row.last_name,
+    email: row.email,
+    address: row.address,
+    city: row.city,
+    zip_code: row.zip,
+    country: row.country,
+    segment_id: "temp",
+    in_robinson: false,
+    custom_variable: row.custom_variable,
+  }));
+}
+
+function markProfilesInRobinson(profilesToAdd: any, profilesInRobinson: any) {
+  profilesToAdd.forEach((profile: any) => {
+    if (
+      profilesInRobinson.some(
+        (robinsonProfile: any) => robinsonProfile.email === profile.email,
+      )
+    ) {
+      profile.in_robinson = true;
+    }
+  });
+}
+
+async function createSegmentWithProfiles(
+  user: any,
+  segmentName: any,
+  profilesToAdd: any,
+) {
+  return await prisma.$transaction(async (prisma) => {
+    const newSegment = await prisma.segment.create({
+      data: {
+        name: segmentName,
+        type: "csv",
+        user_id: user.id,
+        demo: user.demo,
+      },
+    });
+
+    profilesToAdd.forEach((profile: any) => {
+      profile.segment_id = newSegment.id;
+    });
+
+    await prisma.profile.createMany({
+      data: profilesToAdd,
+    });
+
+    const newSegmentWithProfiles = (await prisma.segment.findUnique({
+      where: { id: newSegment.id },
+      include: { profiles: true },
+    })) as any;
+
+    if (newSegmentWithProfiles) {
+      const profiles = await prisma.profile.findMany({
+        where: { segment_id: newSegment.id },
+      });
+
+      newSegmentWithProfiles.profile_count = profiles.length;
+      newSegmentWithProfiles.in_robinson_count = profiles.filter(
+        (profile) => profile.in_robinson,
+      ).length;
+    }
+
+    return newSegmentWithProfiles;
+  });
+}
 
 // USED FOR SEGMENTS PAGE (to create a segment from a webhook)
 router.post("/webhook", async (req, res) => {
