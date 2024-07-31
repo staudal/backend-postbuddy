@@ -275,12 +275,12 @@ router.post("/email-upon-signup", async (req, res) => {
   logtail.info("Received webhook from Supabase upon signup", record);
 
   const resend = new Resend(process.env.RESEND_API_KEY);
-
-  const { error } = await resend.emails.send({
-    from: "Postbuddy <noreply@postbuddy.dk",
-    to: ["jakob@postbuddy.dk", "christian@postbuddy.dk"],
-    subject: "Ny bruger har oprettet sig på app.postbuddy.dk",
-    html: `En ny bruger med følgende oplysninger har oprettet sig på app.postbuddy.dk:
+  (async function () {
+    const { error } = await resend.emails.send({
+      from: "Postbuddy <noreply@postbuddy.dk>",
+      to: ["jakob@postbuddy.dk", "christian@postbuddy.dk"],
+      subject: `Ny bruger har oprettet sig på app.postbuddy.dk`,
+      html: `En ny bruger med følgende oplysninger har oprettet sig på app.postbuddy.dk:
     <br>
     <br>
     <strong>Navn:</strong> ${first_name} ${last_name}
@@ -288,12 +288,12 @@ router.post("/email-upon-signup", async (req, res) => {
     <strong>Email:</strong> ${email}
     <br>
     <strong>Marketing:</strong> ${marketing}`,
-  });
+    });
 
-  if (error) {
-    logtail.error("An error occured while sending email upon signup", error);
-    return console.error({ error });
-  }
+    if (error) {
+      return console.error({ error });
+    }
+  })();
 
   if (marketing) {
     const loops = new LoopsClient("af768fbee93981bf78f9c5b6306eb013");
