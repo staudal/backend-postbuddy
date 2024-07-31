@@ -251,7 +251,6 @@ router.post("/:id/upload", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: MissingRequiredParametersError });
     }
 
-    // if there is æøå in the filename, replace them with aeo
     const sanitizedName = name.replace(/æ/g, "ae").replace(/ø/g, "oe").replace(/å/g, "aa");
 
     await prisma.$transaction(async (prisma) => {
@@ -273,8 +272,8 @@ router.post("/:id/upload", upload.single("file"), async (req, res) => {
 
       const newUpload = await prisma.upload.create({
         data: {
-          name,
-          url: `https://rkjrflfwfqhhpwafimbe.supabase.co/storage/v1/object/public/uploads/${id}/${name}`,
+          name: sanitizedName,
+          url: `https://rkjrflfwfqhhpwafimbe.supabase.co/storage/v1/object/public/uploads/${id}/${sanitizedName}`,
           user_id: design.user_id,
           format,
           height,
