@@ -272,6 +272,8 @@ router.post("/email-upon-signup", async (req, res) => {
   const { record } = await req.body;
   const { first_name, last_name, email, marketing } = record;
 
+  logtail.info("Received webhook from Supabase upon signup", record);
+
   const resend = new Resend(process.env.RESEND_API_KEY);
 
   const { error } = await resend.emails.send({
