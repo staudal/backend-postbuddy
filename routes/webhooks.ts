@@ -289,6 +289,7 @@ router.post("/email-upon-signup", async (req, res) => {
   });
 
   if (error) {
+    logtail.error("An error occured while sending email upon signup", error);
     return console.error({ error });
   }
 
@@ -300,6 +301,7 @@ router.post("/email-upon-signup", async (req, res) => {
     });
 
     if (response.success === false) {
+      logtail.error("Error creating contact in Loops:", response);
       console.error("Error creating contact in Loops:", response.message);
     }
   }
