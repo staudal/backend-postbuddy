@@ -1554,17 +1554,30 @@ export async function periodicallySendLetters() {
           (profile) => profile.id !== `additional-revenue-${campaign.id}`,
         );
 
+        // Make sure all profiles are unique
+        const uniqueProfiles = updatedProfiles.filter(
+          (profile, index, self) =>
+            index ===
+            self.findIndex(
+              (t) =>
+                t.first_name === profile.first_name &&
+                t.last_name === profile.last_name &&
+                t.email === profile.email &&
+                t.zip_code === profile.zip_code
+            ),
+        );
+
         try {
           if (!campaign.segment.demo) {
             await sendLettersForNonDemoUser(
               campaign.user_id,
-              updatedProfiles,
+              uniqueProfiles,
               campaign.design.scene,
               campaign.id,
             );
           } else {
             await sendLettersForDemoUser(
-              updatedProfiles,
+              uniqueProfiles,
               campaign.id,
               campaign.user_id,
             );
