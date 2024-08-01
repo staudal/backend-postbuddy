@@ -1,4 +1,4 @@
-import { PrismaClient, Profile, User } from "@prisma/client";
+import { Campaign, PrismaClient, Profile, User } from "@prisma/client";
 import { KlaviyoSegmentProfile, Order, ProfileToAdd } from "./types";
 import { Order as PrismaOrder } from "@prisma/client";
 import Stripe from "stripe";
@@ -1522,46 +1522,40 @@ export async function periodicallySendLetters() {
         },
         include: {
           design: true,
+          segment: true,
         },
       });
 
       for (const campaign of campaigns) {
-        const recentProfileIds = await getRecentProfileIds(user);
-        const segment = await prisma.segment.findFirst({
-          where: {
-            campaign: {
-              id: campaign.id,
-            },
-          },
-          include: {
-            profiles: {
-              where: {
-                letter_sent: false,
-                in_robinson: false,
-                id: {
-                  notIn: recentProfileIds,
-                },
-              },
-            },
-          },
-        });
+        const unsentProfiles = await getUnsentProfiles(user, campaign);
 
+        // If the campaign does not have a segment or design, then set it to paused
         if (
-          !segment ||
-          segment.profiles.length === 0 ||
+          !campaign.segment ||
           !campaign.design ||
           !campaign.design.scene
+        ) {
+          await prisma.campaign.update({
+            where: { id: campaign.id },
+            data: { status: "paused" },
+          });
+          continue;
+        }
+
+        // If there are no unsent profiles, then continue to the next campaign
+        if (
+          unsentProfiles.length === 0
         ) {
           continue;
         }
 
         // if there is a profile with id "additional-revenue-{campaign.id}", then remove it
-        const updatedProfiles = segment.profiles.filter(
+        const updatedProfiles = unsentProfiles.filter(
           (profile) => profile.id !== `additional-revenue-${campaign.id}`,
         );
 
         try {
-          if (!segment.demo) {
+          if (!campaign.segment.demo) {
             await sendLettersForNonDemoUser(
               campaign.user_id,
               updatedProfiles,
@@ -1793,50 +1787,78 @@ export async function checkIfProfileIsInRobinson(profile: ProfileToAdd) {
   }
 }
 
-async function getRecentProfileIds(user: User): Promise<string[]> {
-  const bufferDaysAsNumber = Number(user.buffer_days || 10n);
-  const daysAgo = subDays(new Date(), bufferDaysAsNumber);
+async function getUnsentProfiles(user: User, campaign: Campaign): Promise<Profile[]> {
+  const bufferDaysAsNumber = Number(user.buffer_days || 10);
+  const daysAgo = subDays(new Date(), bufferDaysAsNumber); // Subtract buffer days from today
   const BATCH_SIZE = 10000;
-  let recentProfileIds: string[] = [];
+  let sentProfiles: Profile[] = [];
   let skip = 0;
   let hasMore = true;
 
-  const userSegments = await prisma.segment.findMany({
-    where: {
-      user_id: user.id,
-    },
-    select: {
-      id: true,
-    },
-  });
-
+  // Step 1: Fetch all profiles that have received letters within buffer days
   while (hasMore) {
-    const recentProfiles = await prisma.profile.findMany({
+    const fetchedProfiles = await prisma.profile.findMany({
       where: {
         letter_sent: true,
         letter_sent_at: {
           gte: daysAgo,
         },
-        segment_id: {
-          in: userSegments.map((segment) => segment.id),
-        },
-      },
-      select: {
-        id: true,
+        segment_id: campaign.segment_id,
       },
       take: BATCH_SIZE,
       skip: skip,
     });
 
-    if (recentProfiles.length < BATCH_SIZE) {
+    sentProfiles = sentProfiles.concat(fetchedProfiles);
+
+    if (fetchedProfiles.length < BATCH_SIZE) {
       hasMore = false;
     }
-
-    recentProfileIds = recentProfileIds.concat(
-      recentProfiles.map((profile) => profile.id),
-    );
     skip += BATCH_SIZE;
   }
 
-  return recentProfileIds;
+  // Step 2: Extract the identifying fields from these profiles
+  const sentProfileIdentifiers = sentProfiles.map(profile => ({
+    first_name: profile.first_name,
+    last_name: profile.last_name,
+    zip_code: profile.zip_code,
+    email: profile.email,
+    // Add other identifying fields as necessary
+  }));
+
+  // Step 3: Fetch all profiles that do not have these identifying fields
+  let unsentProfiles: Profile[] = [];
+  skip = 0;
+  hasMore = true;
+
+  while (hasMore) {
+    const fetchedProfiles = await prisma.profile.findMany({
+      where: {
+        letter_sent: false,
+        in_robinson: false,
+        segment_id: campaign.segment_id,
+      },
+      take: BATCH_SIZE,
+      skip: skip,
+    });
+
+    const filteredProfiles = fetchedProfiles.filter(profile => {
+      return !sentProfileIdentifiers.some(identifier =>
+        identifier.first_name === profile.first_name &&
+        identifier.last_name === profile.last_name &&
+        identifier.zip_code === profile.zip_code &&
+        identifier.email === profile.email,
+        // Add other identifying fields as necessary
+      );
+    });
+
+    unsentProfiles = unsentProfiles.concat(filteredProfiles);
+
+    if (fetchedProfiles.length < BATCH_SIZE) {
+      hasMore = false;
+    }
+    skip += BATCH_SIZE;
+  }
+
+  return unsentProfiles;
 }
