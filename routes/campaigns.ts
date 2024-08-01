@@ -343,28 +343,30 @@ router.post("/", authenticateToken, async (req, res) => {
     )
       return res.status(400).json({ error: MissingRequiredParametersError });
 
+    // Verify that segment exists
     const segment = await prisma.segment.findUnique({
       where: { id: segment_id, user_id },
-      include: {
-        user: {
-          include: {
-            subscription: true,
-          },
-        },
-        profiles: true,
-      },
     });
-    if (!segment) return res.status(404).json({ error: SegmentNotFoundError }); // Segment not found
-    if (segment.profiles.length === 0)
-      return res.status(404).json({ error: ProfilesNotFoundError }); // No profiles found
-    if (!segment.user.subscription && segment.demo === false)
-      return res.status(400).json({ error: MissingSubscriptionError }); // User has no subscription
+    if (!segment) return res.status(404).json({ error: SegmentNotFoundError });
 
+    // Verify that design exists
     const design = await prisma.design.findUnique({
       where: { id: design_id },
     });
     if (!design || !design.scene)
       return res.status(404).json({ error: DesignNotFoundError });
+
+    // Verify that user has an active subscription
+    const user = await prisma.user.findUnique({
+      where: { id: user_id },
+      include: {
+        subscription: true,
+      },
+    });
+
+    if (user?.subscription?.status !== "active") {
+      return res.status(400).json({ error: MissingSubscriptionError });
+    }
 
     const startDate = start_date
       ? new Date(start_date)

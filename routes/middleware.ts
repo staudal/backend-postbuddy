@@ -1,4 +1,3 @@
-import { prisma } from '../app';
 import { supabase } from '../constants';
 
 const authenticateToken = async (req: any, res: any, next: any) => {
