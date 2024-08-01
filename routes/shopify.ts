@@ -60,12 +60,6 @@ router.post("/bulk-query-trigger", async (req, res) => {
             edges {
               node {
                 id
-                totalPriceSet {
-                  shopMoney {
-                    amount
-                    currencyCode
-                  }
-                }
                 customer {
                   firstName
                   lastName
@@ -79,27 +73,7 @@ router.post("/bulk-query-trigger", async (req, res) => {
                 }
                 createdAt
                 discountCodes
-                refunds {
-                  id
-                  createdAt
-                  refundLineItems {
-                    id
-                    lineItemId
-                    quantity
-                    subtotalSet {
-                      shopMoney {
-                        amount
-                        currencyCode
-                      }
-                    }
-                    totalTaxSet {
-                      shopMoney {
-                        amount
-                        currencyCode
-                      }
-                    }
-                  }
-                }
+                currentTotalPrice
               }
             }
           }

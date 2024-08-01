@@ -131,110 +131,93 @@ export const fetchBulkOperationData = async (url: string, userId: string) => {
   }
 };
 
+
 export const saveOrders = async (user: User, shopifyOrders: Order[]) => {
   const BATCH_SIZE = 1000;
-
+  const PAGE_SIZE = 5000; // Size for pagination to fetch existing orders in chunks
   try {
-    // Map of order IDs to shopify orders for quick lookup
     const shopifyOrderMap = new Map(
       shopifyOrders.map((order) => [order.id, order]),
     );
 
-    // Split orders into batches
     const batches = [];
     for (let i = 0; i < shopifyOrders.length; i += BATCH_SIZE) {
       batches.push(shopifyOrders.slice(i, i + BATCH_SIZE));
     }
 
-    // Process each batch concurrently
-    await Promise.all(
-      batches.map(async (batch) => {
-        const orderIds = batch.map((order) => order.id);
+    // Fetch existing orders in pages
+    let existingOrders: PrismaOrder[] = [];
+    let page = 0;
+    let hasMoreOrders = true;
 
-        // Use a transaction to handle all operations in the batch
-        await prisma.$transaction(async (prisma) => {
-          // Fetch existing orders in a single query
-          const existingDbOrders = await prisma.order.findMany({
+    while (hasMoreOrders) {
+      const fetchedOrders = await prisma.order.findMany({
+        where: {
+          user_id: user.id,
+          order_id: {
+            in: shopifyOrders.map(order => order.id).slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+          },
+        },
+        skip: page * PAGE_SIZE,
+        take: PAGE_SIZE,
+      });
+
+      if (fetchedOrders.length === 0) {
+        hasMoreOrders = false;
+      } else {
+        existingOrders = [...existingOrders, ...fetchedOrders];
+        page++;
+      }
+    }
+
+    const existingOrderMap = new Map(
+      existingOrders.map((order) => [order.order_id, order]),
+    );
+
+    // Process each batch
+    for (const batch of batches) {
+      await prisma.$transaction(async (prisma) => {
+        const newOrders = batch.filter((order) => !existingOrderMap.has(order.id));
+        const updatedOrders = batch.filter((order) => {
+          const existingOrder = existingOrderMap.get(order.id);
+          return existingOrder && existingOrder.amount !== parseFloat(order.currentTotalPrice);
+        });
+
+        // Create new orders
+        if (newOrders.length > 0) {
+          await prisma.order.createMany({
+            data: newOrders.map((order) => formatOrderData(order, user.id)),
+            skipDuplicates: true,
+          });
+        }
+
+        // Update existing orders
+        if (updatedOrders.length > 0) {
+          await prisma.order.updateMany({
             where: {
               user_id: user.id,
-              order_id: { in: orderIds },
+              order_id: { in: updatedOrders.map((order) => order.id) },
             },
+            data: updatedOrders.map((order) => formatOrderData(order, user.id)),
           });
+        }
+      });
+    }
 
-          // Identify new Shopify orders
-          const existingOrderIds = new Set(
-            existingDbOrders.map((order) => order.order_id),
-          );
-          const newShopifyOrders = batch.filter(
-            (order) => !existingOrderIds.has(order.id),
-          );
+    // Remove orders from the database that are not in the shopifyOrders
+    const ordersToDelete = existingOrders.filter(
+      (order) => !shopifyOrderMap.has(order.order_id)
+    ).map((order) => order.order_id);
 
-          // Save new orders if any
-          if (newShopifyOrders.length > 0) {
-            await prisma.order.createMany({
-              data: newShopifyOrders.map((order) =>
-                formatOrderData(order, user.id),
-              ),
-              skipDuplicates: true,
-            });
-          }
+    if (ordersToDelete.length > 0) {
+      await prisma.order.deleteMany({
+        where: {
+          user_id: user.id,
+          order_id: { in: ordersToDelete },
+        },
+      });
+    }
 
-          // Identify refunded orders from the existing DB orders
-          const refundedOrders = existingDbOrders.filter((dbOrder) => {
-            const shopifyOrder = shopifyOrderMap.get(dbOrder.order_id);
-            return shopifyOrder && shopifyOrder.refunds.length > 0;
-          });
-
-          // Handle refunded orders if any
-          if (refundedOrders.length > 0) {
-            const updates = refundedOrders.map(async (dbOrder) => {
-              const shopifyOrder = shopifyOrderMap.get(dbOrder.order_id);
-
-              if (!shopifyOrder) {
-                return;
-              }
-
-              let refundedAmount = 0;
-
-              // Calculate the total refunded amount from the refunded items
-              for (const refund of shopifyOrder.refunds) {
-                for (const refundItem of refund.refundLineItems) {
-                  const subtotal = parseFloat(
-                    refundItem.subtotalSet.shopMoney.amount,
-                  );
-                  const totalTax = parseFloat(
-                    refundItem.totalTaxSet.shopMoney.amount,
-                  );
-                  refundedAmount += subtotal + totalTax;
-                }
-              }
-
-              // Update or delete the order amount in the database
-              const updatedAmount = dbOrder.amount - refundedAmount;
-
-              if (updatedAmount <= 0) {
-                // Delete the order if the total amount is 0 or negative
-                await prisma.orderProfile.deleteMany({
-                  where: { order_id: dbOrder.id },
-                });
-
-                await prisma.order.delete({
-                  where: { id: dbOrder.id },
-                });
-              } else {
-                // Update the order amount if it's positive
-                await prisma.order.update({
-                  where: { id: dbOrder.id },
-                  data: { amount: updatedAmount },
-                });
-              }
-            });
-
-            await Promise.all(updates);
-          }
-        });
-      }),
-    );
   } catch (error) {
     logtail.error(`Failed to save orders for user ${user.id}: ${error}`);
     throw new ErrorWithStatusCode(
@@ -248,18 +231,140 @@ export const saveOrders = async (user: User, shopifyOrders: Order[]) => {
   return shopifyOrders;
 };
 
+
 export const processOrdersForCampaigns = async (
   user: any,
   allOrders: PrismaOrder[],
 ) => {
   try {
     const campaigns = user.campaigns;
-    for (const allOrder of allOrders) {
-      await findAndUpdateProfile(allOrder, campaigns);
-    }
-    return;
+
+    // Prepare orders by campaign
+    const ordersByCampaign = campaigns.reduce((acc: any, campaign: Campaign) => {
+      acc[campaign.id] = allOrders.filter(order => {
+        const campaignStartDate = new Date(campaign.start_date);
+        const campaignEndDate = new Date(campaignStartDate);
+        campaignEndDate.setDate(campaignEndDate.getDate() + 60);
+        const shopifyOrderCreatedAt = new Date(order.created_at);
+
+        return shopifyOrderCreatedAt >= campaignStartDate &&
+          shopifyOrderCreatedAt <= campaignEndDate;
+      });
+      return acc;
+    }, {} as Record<string, PrismaOrder[]>);
+
+    // Process each campaign's orders
+    await Promise.all(Object.keys(ordersByCampaign).map(async (campaignId) => {
+      const campaign = campaigns.find((c: Campaign) => c.id === campaignId);
+      const orders = ordersByCampaign[campaignId];
+
+      await processOrdersForCampaign(
+        campaign,
+        orders
+      );
+    }));
+
   } catch (error: any) {
     throw new ErrorWithStatusCode(error.message, error.statusCode);
+  }
+};
+
+const processOrdersForCampaign = async (
+  campaign: any,
+  orders: PrismaOrder[],
+) => {
+  try {
+    const profilesToCreate: any[] = [];
+    const orderProfilesToCreate: any[] = [];
+
+    // Fetch all profiles in batch
+    const profilesMap = new Map<string, any>();
+    const additionalProfileId = `additional-revenue-${campaign.id}`;
+
+    for (const order of orders) {
+      const existingProfile = await prisma.profile.findFirst({
+        where: buildProfileWhereClause(order, campaign.segment_id),
+        include: { orders: true },
+      });
+
+      if (existingProfile) {
+        const existingDbOrder = await prisma.orderProfile.findFirst({
+          where: {
+            order_id: order.id,
+            profile_id: existingProfile.id,
+          },
+        });
+
+        if (!existingDbOrder) {
+          orderProfilesToCreate.push({
+            order_id: order.id,
+            profile_id: existingProfile.id,
+          });
+        }
+      } else {
+        const matchingDiscountCode = campaign.discount_codes.find(
+          (code: string) => order.discount_codes.includes(code),
+        );
+
+        if (matchingDiscountCode) {
+          if (!profilesMap.has(additionalProfileId)) {
+            const profile = await prisma.profile.findFirst({
+              where: { id: additionalProfileId },
+            });
+
+            if (!profile) {
+              profilesToCreate.push({
+                id: additionalProfileId,
+                first_name: "additional-revenue",
+                last_name: "additional-revenue",
+                address: "additional-revenue",
+                zip_code: "additional-revenue",
+                city: "additional-revenue",
+                country: "additional-revenue",
+                segment_id: campaign.segment_id,
+                letter_sent: true,
+                email: "additional-revenue",
+              });
+            }
+            profilesMap.set(additionalProfileId, true);
+          }
+
+          const existingDbOrder = await prisma.orderProfile.findFirst({
+            where: {
+              order_id: order.id,
+              profile_id: additionalProfileId,
+            },
+          });
+
+          if (!existingDbOrder) {
+            orderProfilesToCreate.push({
+              order_id: order.id,
+              profile_id: additionalProfileId,
+            });
+          }
+        }
+      }
+    }
+
+    // Execute all operations in a single transaction
+    await prisma.$transaction(async (prisma) => {
+      if (profilesToCreate.length > 0) {
+        await prisma.profile.createMany({
+          data: profilesToCreate,
+          skipDuplicates: true,
+        });
+      }
+
+      if (orderProfilesToCreate.length > 0) {
+        await prisma.orderProfile.createMany({
+          data: orderProfilesToCreate,
+          skipDuplicates: true,
+        });
+      }
+    });
+
+  } catch (error: any) {
+    throw new ErrorWithStatusCode(error.message, 500);
   }
 };
 
@@ -269,7 +374,6 @@ export const findAndUpdateProfile = async (
 ) => {
   try {
     for (const campaign of campaigns) {
-      let revenueForDiscountCodesWithNoProfile = 0;
       const campaignStartDate = new Date(campaign.start_date);
       const campaignEndDate = new Date(campaignStartDate);
       campaignEndDate.setDate(campaignEndDate.getDate() + 60);
@@ -284,7 +388,6 @@ export const findAndUpdateProfile = async (
           where: buildProfileWhereClause(
             allOrder,
             campaign.segment_id,
-            revenueForDiscountCodesWithNoProfile,
           ),
           include: { orders: true },
         });
@@ -358,11 +461,9 @@ export const findAndUpdateProfile = async (
   }
 };
 
-// REMOVED DISCOUNT CODES BECAUSE OF SCEWED RESULTS: MULTIPLE PROFILES ARE FOUND FOR THE SAME ORDER BECAUSE OF NON-UNIQUE DISCOUNT CODES
 export const buildProfileWhereClause = (
   allOrder: PrismaOrder,
   segmentId: string,
-  revenueForDiscountCodesWithNoProfile: number,
 ) => {
   const firstName = allOrder.first_name.toLowerCase();
   const lastName = allOrder.last_name.toLowerCase();
@@ -396,9 +497,7 @@ export const formatOrderData = (newShopifyOrder: Order, userId: string) => {
     created_at: newShopifyOrder.createdAt,
     order_id: newShopifyOrder.id,
     user_id: userId,
-    amount: newShopifyOrder.totalPriceSet
-      ? parseFloat(newShopifyOrder.totalPriceSet.shopMoney.amount)
-      : 0,
+    amount: parseFloat(newShopifyOrder.currentTotalPrice),
     discount_codes: newShopifyOrder.discountCodes,
     first_name: newShopifyOrder.customer?.firstName?.toLowerCase() || "",
     last_name: newShopifyOrder.customer?.lastName?.toLowerCase() || "",
@@ -448,12 +547,6 @@ export async function triggerShopifyBulkQueries() {
           edges {
             node {
               id
-              totalPriceSet {
-                shopMoney {
-                  amount
-                  currencyCode
-                }
-              }
               customer {
                 firstName
                 lastName
@@ -465,9 +558,7 @@ export async function triggerShopifyBulkQueries() {
                   country
                 }
               }
-              refunds {
-                id
-              }
+              currentTotalPrice
               createdAt
               discountCodes
             }
