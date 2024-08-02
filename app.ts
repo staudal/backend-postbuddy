@@ -22,6 +22,7 @@ import { errorHandler } from "./errorhandler";
 import pm2, { ProcessDescription } from "pm2";
 import {
   activateScheduledCampaigns,
+  bulkQueryCron,
   periodicallySendLetters,
   triggerShopifyBulkQueries,
   updateKlaviyoProfiles,
@@ -46,6 +47,7 @@ const setupCronJobs = () => {
   cron.schedule("0 1 * * *", updateKlaviyoProfiles); // every day at 01:00
   cron.schedule("0 * * * *", activateScheduledCampaigns); // once per hour
   cron.schedule("0 * * * *", periodicallySendLetters); // once per hour
+  cron.schedule("0 * * * *", bulkQueryCron); // once per hour
 };
 
 if (process.env.NODE_ENV === "production") {
