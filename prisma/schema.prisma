@@ -524,6 +524,7 @@ model bulk_query_jobs {
   created_at DateTime @default(now()) @db.Timestamptz(6)
   user_id    String   @db.Uuid
   orders_url String   @db.VarChar
+  status     String   @db.VarChar
   users      User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@schema("public")

@@ -1687,6 +1687,67 @@ export async function periodicallySendLetters() {
   }
 }
 
+export async function processBulkQuery(user: User, url: string) {
+
+  let shopifyOrders = await fetchBulkOperationData(url, user.id);
+  await saveOrders(user, shopifyOrders);
+
+  let allOrders: any[] = [];
+  const batchSize = 10000;
+  let skip = 0;
+
+  while (true) {
+    const ordersBatch = await prisma.order.findMany({
+      where: { user_id: user.id },
+      skip,
+      take: batchSize,
+    });
+
+    if (ordersBatch.length === 0) {
+      break;
+    }
+
+    allOrders = allOrders.concat(ordersBatch);
+    skip += batchSize;
+  }
+
+  await processOrdersForCampaigns(user, allOrders);
+  logtail.info(`Processed bulk query for user with email ${user.email}`);
+}
+
+export async function bulkQueryCron() {
+  const jobs = await prisma.bulk_query_jobs.findMany({
+    where: { status: "pending" },
+  });
+
+  for (const job of jobs) {
+    const user = await prisma.user.findUnique({
+      where: { id: job.user_id },
+    });
+    if (!user) {
+      logtail.error(
+        `User with id ${job.user_id} not found while trying to process bulk query`,
+      );
+      continue;
+    }
+    try {
+      await processBulkQuery(user, job.orders_url);
+      await prisma.bulk_query_jobs.update({
+        where: { id: job.id },
+        data: { status: "completed" },
+      });
+    } catch (error: any) {
+      await prisma.bulk_query_jobs.update({
+        where: { id: job.id },
+        data: { status: "failed" },
+      });
+      logtail.error(
+        `An error occured while trying to process bulk query for user with email ${user.email}`,
+      );
+    }
+  }
+}
+
 export function validateHMAC(query: string, hmac: string) {
   const sharedSecret = process.env.SHOPIFY_CLIENT_SECRET;
 
