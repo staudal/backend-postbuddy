@@ -185,6 +185,7 @@ router.post("/bulk-query-finished", async (req, res) => {
       orders_url: url,
       user_id: user.id,
       created_at: new Date(),
+      status: "pending",
     },
   });
 
