@@ -11,29 +11,31 @@ datasource db {
 }
 
 model User {
-  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  created_at   DateTime      @default(now()) @db.Timestamptz(6)
-  first_name   String
-  last_name    String
-  company      String?
-  email        String        @unique
-  password     String
-  address      String?
-  city         String?
-  zip_code     String?
-  country      String        @default("denmark")
-  access_token String        @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  role         String        @default("user")
-  demo         Boolean       @default(false)
-  buffer_days  Int           @default(60)
-  campaigns    Campaign[]
-  designs      Design[]
-  integrations Integration[]
-  orders       Order[]
-  segments     Segment[]
-  subscription Subscription?
-  uploads      Upload[]
-  users        users         @relation(fields: [id], references: [id], onDelete: Cascade)
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+  first_name      String
+  last_name       String
+  company         String?
+  email           String            @unique
+  password        String
+  address         String?
+  city            String?
+  zip_code        String?
+  country         String            @default("denmark")
+  access_token    String            @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  role            String            @default("user")
+  demo            Boolean           @default(false)
+  buffer_days     Int               @default(60)
+  marketing       Boolean           @default(false)
+  bulk_query_jobs bulk_query_jobs[]
+  campaigns       Campaign[]
+  designs         Design[]
+  integrations    Integration[]
+  orders          Order[]
+  segments        Segment[]
+  subscription    Subscription?
+  uploads         Upload[]
+  users           users             @relation(fields: [id], references: [id], onDelete: Cascade)
 
   @@map("users")
   @@schema("public")
@@ -122,7 +124,7 @@ model OrderProfile {
   created_at DateTime @default(now()) @db.Timestamptz(6)
   order_id   String   @db.Uuid
   profile_id String   @db.Uuid
-  order      Order    @relation(fields: [order_id], references: [id], onDelete: NoAction)
+  order      Order    @relation(fields: [order_id], references: [id], onDelete: Cascade)
   profile    Profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
 
   @@map("orders_profiles")
@@ -514,6 +516,17 @@ model users {
   @@index([instance_id])
   @@index([is_anonymous])
   @@schema("auth")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model bulk_query_jobs {
+  id         BigInt   @id @default(autoincrement())
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  user_id    String   @db.Uuid
+  orders_url String   @db.VarChar
+  users      User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@schema("public")
 }
 
 enum aal_level {

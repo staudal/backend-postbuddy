@@ -3,7 +3,6 @@ import { logtail, prisma } from "../app";
 import {
   fetchBulkOperationData,
   getBulkOperationUrl,
-  loadUserWithShopifyIntegration,
   processOrdersForCampaigns,
   saveOrders,
 } from "../functions";
@@ -126,6 +125,11 @@ router.post("/bulk-query-finished", async (req, res) => {
   const { shop, state } = req.query;
 
   if (!admin_graphql_api_id || !shop || !state) {
+    logtail.error("POST /shopify/bulk-query-finished: Missing required params", {
+      admin_graphql_api_id,
+      shop,
+      state,
+    });
     return res.status(400).json({ error: "Mangler påkrævede parametre" });
   }
 
@@ -140,6 +144,9 @@ router.post("/bulk-query-finished", async (req, res) => {
   });
 
   if (!user) {
+    logtail.error(
+      `POST /shopify/bulk-query-finished: User with user_id ${state} not found`,
+    );
     return res
       .status(404)
       .json({ error: `Bruger med user_id ${state} findes ikke` });
@@ -150,6 +157,9 @@ router.post("/bulk-query-finished", async (req, res) => {
   )?.token;
 
   if (!shopifyToken) {
+    logtail.error(
+      `POST /shopify/bulk-query-finished: User with user_id ${state} does not have a valid Shopify integration`,
+    );
     return res.status(404).json({
       error: `Bruger med user_id ${state} har ikke en gyldig Shopify-integration`,
     });
@@ -164,52 +174,28 @@ router.post("/bulk-query-finished", async (req, res) => {
       user.id,
     );
   } catch (error: any) {
-    logtail.error(error + "POST /shopify/bulk-query-finished");
-    return res.status(error.statusCode).json({ error: error.message });
-  }
-
-  let shopifyOrders: any;
-  try {
-    shopifyOrders = await fetchBulkOperationData(url, user.id);
-  } catch (error: any) {
-    logtail.error(error + "POST /shopify/bulk-query-finished");
-    return res.status(error.statusCode).json({ error: error.message });
-  }
-
-  try {
-    await saveOrders(user, shopifyOrders);
-  } catch (error: any) {
-    logtail.error(error + "POST /shopify/bulk-query-finished");
-    return res.status(error.statusCode).json({ error: error.message });
-  }
-
-  let allOrders: any[] = [];
-  const batchSize = 10000;
-  let skip = 0;
-
-  while (true) {
-    const ordersBatch = await prisma.order.findMany({
-      where: { user_id: user.id },
-      skip,
-      take: batchSize,
+    logtail.error(`Failed to get bulk operation url for user with email ${user.email}`, {
+      error: error.message,
     });
-
-    if (ordersBatch.length === 0) {
-      break;
-    }
-
-    allOrders = allOrders.concat(ordersBatch);
-    skip += batchSize;
-  }
-
-  try {
-    await processOrdersForCampaigns(user, allOrders);
-  } catch (error: any) {
-    logtail.error(error + "POST /shopify/bulk-query-finished");
     return res.status(error.statusCode).json({ error: error.message });
   }
 
-  logtail.info(`Processed bulk query for user with email ${user.email}`);
+  const savedJob = await prisma.bulk_query_jobs.create({
+    data: {
+      orders_url: url,
+      user_id: user.id,
+      created_at: new Date(),
+    },
+  });
+
+  if (!savedJob) {
+    logtail.error(
+      `Failed to save bulk query job for user with email ${user.email}`,
+    );
+    return res.status(500).json({
+      error: `Kunne ikke gemme bulk query job for bruger ${user.id}`,
+    });
+  }
 
   return res.status(200).json({ message: "ok" });
 });
