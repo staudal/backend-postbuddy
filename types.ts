@@ -610,7 +610,7 @@ export interface Customer {
 
 export interface Order {
   id: string;
-  currentTotalPrice: string;
+  currentTotalPriceSet: ShopMoney;
   customer: Customer;
   createdAt: string;
   discountCodes: string[];

@@ -72,7 +72,11 @@ router.post("/bulk-query-trigger", async (req, res) => {
                 }
                 createdAt
                 discountCodes
-                currentTotalPrice
+                currentTotalPriceSet {
+                  shopMoney {
+                    amount
+                  }
+                }
               }
             }
           }

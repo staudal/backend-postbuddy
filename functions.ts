@@ -180,7 +180,7 @@ export const saveOrders = async (user: User, shopifyOrders: Order[]) => {
         const newOrders = batch.filter((order) => !existingOrderMap.has(order.id));
         const updatedOrders = batch.filter((order) => {
           const existingOrder = existingOrderMap.get(order.id);
-          return existingOrder && existingOrder.amount !== parseFloat(order.currentTotalPrice);
+          return existingOrder && existingOrder.amount !== parseFloat(order.currentTotalPriceSet.amount);
         });
 
         // Create new orders
@@ -497,7 +497,7 @@ export const formatOrderData = (newShopifyOrder: Order, userId: string) => {
     created_at: newShopifyOrder.createdAt,
     order_id: newShopifyOrder.id,
     user_id: userId,
-    amount: parseFloat(newShopifyOrder.currentTotalPrice),
+    amount: parseFloat(newShopifyOrder.currentTotalPriceSet.amount),
     discount_codes: newShopifyOrder.discountCodes,
     first_name: newShopifyOrder.customer?.firstName?.toLowerCase() || "",
     last_name: newShopifyOrder.customer?.lastName?.toLowerCase() || "",
@@ -558,7 +558,11 @@ export async function triggerShopifyBulkQueries() {
                   country
                 }
               }
-              currentTotalPrice
+              currentTotalPriceSet {
+                shopMoney {
+                  amount
+                }
+              }
               createdAt
               discountCodes
             }
