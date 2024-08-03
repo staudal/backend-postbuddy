@@ -4,7 +4,6 @@ import cors from "cors";
 import { PrismaClient } from "@prisma/client";
 import cron from "node-cron";
 import { authenticateToken } from "./routes/middleware";
-import shopifyRouter from "./routes/shopify";
 import usersRouter from "./routes/users";
 import userRouter from "./routes/user";
 import segmentRouter from "./routes/segments";
@@ -22,9 +21,7 @@ import { errorHandler } from "./errorhandler";
 import pm2, { ProcessDescription } from "pm2";
 import {
   activateScheduledCampaigns,
-  bulkQueryCron,
   periodicallySendLetters,
-  triggerShopifyBulkQueries,
   updateKlaviyoProfiles,
 } from "./functions";
 import path from "path";
@@ -43,11 +40,9 @@ app.use("/cesdk", express.static(path.join(__dirname, "cesdk")));
 
 // Function to setup cron jobs
 const setupCronJobs = () => {
-  cron.schedule("0 0 * * *", triggerShopifyBulkQueries); // every day at 00:00
   cron.schedule("0 1 * * *", updateKlaviyoProfiles); // every day at 01:00
   cron.schedule("0 * * * *", activateScheduledCampaigns); // once per hour
   cron.schedule("0 * * * *", periodicallySendLetters); // once per hour
-  cron.schedule("0 * * * *", bulkQueryCron); // once per hour
 };
 
 if (process.env.NODE_ENV === "production") {
@@ -98,7 +93,6 @@ if (process.env.NODE_ENV === "production") {
 
 // Setup routes
 app.use("/webhooks", webhooksRouter);
-app.use("/shopify", shopifyRouter);
 
 // Fully protected routes
 app.use("/designs", authenticateToken, designRouter);
