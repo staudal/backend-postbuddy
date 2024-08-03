@@ -1663,7 +1663,7 @@ export async function periodicallySendLetters() {
         );
 
         try {
-          if (!campaign.segment.demo) {
+          if (!campaign.demo && !campaign.segment.demo) {
             await sendLettersForNonDemoUser(
               campaign.user_id,
               uniqueProfiles,
