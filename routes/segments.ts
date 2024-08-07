@@ -443,6 +443,7 @@ router.post("/csv", async (req, res) => {
       // Check the profiles against the Robinson list and mark them accordingly
       const profilesInRobinson = await returnProfilesInRobinson(profilesToAdd);
       markProfilesInRobinson(profilesToAdd, profilesInRobinson);
+      console.log(profilesInRobinson.length);
 
       // Create the segment and add the profiles to the database
       const newSegmentWithProfiles = await createSegmentWithProfiles(
@@ -577,7 +578,7 @@ function processRows(data: any) {
         (cell) => cell !== "" && cell !== null && cell !== undefined,
       ),
     ) // Remove rows with null or empty data
-    .filter((row: any) => allowedCountries.has(row.country)) // Filter out incorrect country rows
+    .filter((row: any) => allowedCountries.has(row.country.toLowerCase())) // Filter out invalid countries
     .filter(uniqueByEmail) // Filter out duplicate emails
     .filter(uniqueByProfile); // Filter out duplicate profiles
 }
