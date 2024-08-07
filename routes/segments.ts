@@ -443,7 +443,6 @@ router.post("/csv", async (req, res) => {
       // Check the profiles against the Robinson list and mark them accordingly
       const profilesInRobinson = await returnProfilesInRobinson(profilesToAdd);
       markProfilesInRobinson(profilesToAdd, profilesInRobinson);
-      console.log(profilesInRobinson.length);
 
       // Create the segment and add the profiles to the database
       const newSegmentWithProfiles = await createSegmentWithProfiles(
@@ -454,6 +453,7 @@ router.post("/csv", async (req, res) => {
 
       return res.status(200).json(newSegmentWithProfiles);
     } catch (error: any) {
+      console.log(error);
       logtail.error(error + "POST /segments/csv");
       return res.status(500).json({ error: InternalServerError });
     }
@@ -505,11 +505,23 @@ function validateHeaders(headers: string[]) {
 function processRows(data: any) {
   const allowedCountries = new Set([
     "denmark",
+    "Denmark",
+    "Danmark",
     "danmark",
     "sweden",
+    "Sweden",
+    "Sverige",
     "sverige",
     "germany",
+    "Germany",
+    "Tyskland",
     "tyskland",
+    "DK",
+    "dk",
+    "SE",
+    "se",
+    "DE",
+    "de",
   ]);
 
   // Function to split names and adjust first and last names
@@ -561,7 +573,12 @@ function processRows(data: any) {
     });
   };
 
-  return data
+  if (!Array.isArray(data)) {
+    console.error("processRows: Input data is not an array", data);
+    return [];
+  }
+
+  const processedData = data
     .map((row: any) => splitNames(row)) // Adjust first and last names
     .map((row: any) => ({
       first_name: row.first_name?.toLowerCase(),
@@ -573,15 +590,21 @@ function processRows(data: any) {
       country: row.country?.toLowerCase(),
       custom_variable: row.custom_variable?.toLowerCase() || null,
     }))
-    .filter((row: any) =>
-      Object.values(row).every(
+    .filter((row: any) => {
+      const { custom_variable, ...rest } = row;
+      return Object.values(rest).every(
         (cell) => cell !== "" && cell !== null && cell !== undefined,
-      ),
-    ) // Remove rows with null or empty data
-    .filter((row: any) => allowedCountries.has(row.country.toLowerCase())) // Filter out invalid countries
-    .filter(uniqueByEmail) // Filter out duplicate emails
-    .filter(uniqueByProfile); // Filter out duplicate profiles
+      );
+    }) // Remove rows with null or empty data except custom_variable
+    .filter((row: any) => allowedCountries.has(row.country)); // Filter out incorrect country rows
+
+  const uniqueEmails = uniqueByEmail(processedData); // Filter out duplicate emails
+  const uniqueProfiles = uniqueByProfile(uniqueEmails); // Filter out duplicate profiles
+
+  return uniqueProfiles;
 }
+
+
 
 function prepareProfiles(rows: any) {
   return rows.map((row: any) => ({
