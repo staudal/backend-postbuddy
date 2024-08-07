@@ -47,81 +47,12 @@ router.get("/", authenticateToken, async (req, res) => {
       orderBy: {
         created_at: "desc",
       },
+      include: {
+        profiles: true,
+      }
     });
 
-    if (segments.length === 0) {
-      return res.status(200).json([]);
-    }
-
-    // Fetch all profiles and campaigns related to these segments
-    const segmentIds = segments.map((segment) => segment.id);
-
-    // Fetch profile counts for these segments
-    const profileCounts = await prisma.profile.groupBy({
-      by: ["segment_id"],
-      where: {
-        segment_id: {
-          in: segmentIds,
-        },
-      },
-      _count: {
-        _all: true,
-      },
-    });
-
-    // Fetch in_robinson profile counts for these segments
-    const inRobinsonCounts = await prisma.profile.groupBy({
-      by: ["segment_id"],
-      where: {
-        segment_id: {
-          in: segmentIds,
-        },
-        in_robinson: true,
-      },
-      _count: {
-        _all: true,
-      },
-    });
-
-    // Fetch all campaigns related to these segments
-    const campaigns = await prisma.campaign.findMany({
-      where: {
-        segment_id: {
-          in: segmentIds,
-        },
-      },
-    });
-
-    // Create a map for campaign lookups
-    const campaignMap = new Map(
-      campaigns.map((campaign) => [campaign.segment_id, campaign]),
-    );
-
-    // Create a map for profile counts
-    const profileCountMap = new Map(
-      profileCounts.map((count) => [count.segment_id, count._count._all]),
-    );
-
-    // Create a map for in_robinson counts
-    const inRobinsonCountMap = new Map(
-      inRobinsonCounts.map((count) => [count.segment_id, count._count._all]),
-    );
-
-    // Process segments
-    const resultSegments = segments.map((segment) => {
-      const profile_count = profileCountMap.get(segment.id) || 0;
-      const in_robinson_count = inRobinsonCountMap.get(segment.id) || 0;
-      const connected = campaignMap.has(segment.id);
-
-      return {
-        ...segment,
-        profile_count,
-        in_robinson_count,
-        connected,
-      };
-    });
-
-    return res.status(200).json(resultSegments);
+    return res.status(200).json(segments);
   } catch (error: any) {
     logtail.error(error + "GET /segments");
     return res.status(500).json({ error: InternalServerError });
