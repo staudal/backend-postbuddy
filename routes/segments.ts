@@ -49,7 +49,17 @@ router.get("/", authenticateToken, async (req, res) => {
       },
       include: {
         profiles: true,
+        campaign: true,
       }
+    }) as any;
+
+    // If a campaign is connected to the segment, mark it as connected
+    segments.forEach((segment: any) => {
+      segment.connected = !!segment.campaign;
+      segment.profile_count = segment.profiles.length;
+      segment.in_robinson_count = segment.profiles.filter(
+        (profile: any) => profile.in_robinson,
+      ).length;
     });
 
     return res.status(200).json(segments);
