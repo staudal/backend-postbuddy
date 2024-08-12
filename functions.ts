@@ -19,6 +19,9 @@ import { config } from "./constants";
 import { logtail } from "./app";
 import { subDays } from "date-fns";
 import { S3Client } from "@aws-sdk/client-s3";
+import { Resend } from "resend";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export const prisma = new PrismaClient({
   transactionOptions: {
@@ -1334,15 +1337,29 @@ export function capitalizeWords(str: string) {
 }
 
 export async function sendLettersForNonDemoUser(
-  user_id: string,
+  user: User,
   profiles: Profile[],
   designBlob: string,
   campaign_id: string,
 ) {
   // Try to bill the user for the letters sent
   try {
-    await billUserForLettersSent(profiles.length, user_id);
+    await billUserForLettersSent(profiles.length, user.id);
+
+    // Send resend mail
+    await resend.emails.send({
+      from: 'Postbuddy <noreply@postbuddy.dk>',
+      to: ['jakob@postbuddy.dk', 'christian@postbuddy.dk'],
+      subject: `Bruger er blevet opkrævet for breve sendt - ${user.email}`,
+      html: `Bruger med id ${user.id} og email ${user.email} er blevet opkrævet for ${profiles.length} breve sendt, for kampagne med id ${campaign_id}`,
+    });
   } catch (error: any) {
+    await resend.emails.send({
+      from: 'Postbuddy <noreply@postbuddy.dk>',
+      to: ['jakob@postbuddy.dk'],
+      subject: `Fejl ved opkrævning af bruger - ${user.email}`,
+      html: `Der skete en fejl ved opkrævning af bruger med id ${user.id} og email ${user.email} for kampagne med id ${campaign_id}`,
+    });
     throw new ErrorWithStatusCode(error.message, error.statusCode);
   }
 
@@ -1350,16 +1367,31 @@ export async function sendLettersForNonDemoUser(
   let pdf;
   try {
     logtail.info(
-      `Generating a pdf for user ${user_id} and campaign ${campaign_id}`,
+      `Generating a pdf for user ${user.id} and campaign ${campaign_id}`,
     );
     pdf = await generatePdf(profiles, designBlob);
+
+    // Send resend mail
+    await resend.emails.send({
+      from: 'Postbuddy <noreply@postbuddy.dk>',
+      to: ['jakob@postbuddy.dk', 'christian@postbuddy.dk'],
+      subject: `PDF genereret for bruger - ${user.email}`,
+      html: `Der er blevet genereret en pdf for bruger med id ${user.id} og email ${user.email} og kampagne med id ${campaign_id}`,
+    });
+
     logtail.info(
-      `Successfully generated a pdf for user ${user_id} and campaign ${campaign_id}`,
+      `Successfully generated a pdf for user ${user.id} and campaign ${campaign_id}`,
     );
   } catch (error: any) {
     logtail.error(
-      `An error occured while trying to generate a pdf for user ${user_id} and campaign ${campaign_id}`,
+      `An error occured while trying to generate a pdf for user ${user.id} and campaign ${campaign_id}`,
     );
+    await resend.emails.send({
+      from: 'Postbuddy <noreply@postbuddy.dk>',
+      to: ['jakob@postbuddy.dk'],
+      subject: `Fejl ved generering af pdf for bruger - ${user.email}`,
+      html: `Der skete en fejl ved generering af pdf for bruger med id ${user.id} og email ${user.email} for kampagne med id ${campaign_id}`,
+    });
     throw new ErrorWithStatusCode(FailedToGeneratePdfError, 500);
   }
 
@@ -1369,31 +1401,55 @@ export async function sendLettersForNonDemoUser(
 
   try {
     logtail.info(
-      `Sending a pdf to the print partner for user ${user_id} and campaign ${campaign_id}`,
+      `Sending a pdf to the print partner for user ${user.id} and campaign ${campaign_id}`,
     );
-    await sendPdfToPrintPartner(pdf, user_id, dateString);
+    await sendPdfToPrintPartner(pdf, user.id, dateString);
+    await resend.emails.send({
+      from: 'Postbuddy <noreply@postbuddy.dk>',
+      to: ['jakob@postbuddy.dk', 'christian@postbuddy.dk'],
+      subject: `PDF sendt til printpartner for bruger - ${user.email}`,
+      html: `Der er blevet sendt en pdf med ${profiles.length} x 2 sider til printpartner for bruger med id ${user.id} og email ${user.email} og kampagne med id ${campaign_id}`,
+    });
     logtail.info(
-      `Successfully sent a pdf to the print partner for user ${user_id} and campaign ${campaign_id}`,
+      `Successfully sent a pdf to the print partner for user ${user.id} and campaign ${campaign_id}`,
     );
   } catch (error: any) {
     logtail.error(
-      `An error occured while trying to send a pdf to the print partner for user ${user_id} and campaign ${campaign_id}`,
+      `An error occured while trying to send a pdf to the print partner for user ${user.id} and campaign ${campaign_id}`,
     );
+    await resend.emails.send({
+      from: 'Postbuddy <noreply@postbuddy.dk>',
+      to: ['jakob@postbuddy.dk'],
+      subject: `Fejl ved afsendelse af pdf til printpartner for bruger - ${user.email}`,
+      html: `Der skete en fejl ved afsendelse af pdf til printpartner for bruger med id ${user.id} og email ${user.email} for kampagne med id ${campaign_id}`,
+    });
     throw new ErrorWithStatusCode(FailedToSendPdfToPrintPartnerError, 500);
   }
 
   try {
     logtail.info(
-      `Generating a csv and sending it to the print partner for user ${user_id} and campaign ${campaign_id}`,
+      `Generating a csv and sending it to the print partner for user ${user.id} and campaign ${campaign_id}`,
     );
-    await generateCsvAndSendToPrintPartner(profiles, user_id, dateString);
+    await generateCsvAndSendToPrintPartner(profiles, user.id, dateString);
+    await resend.emails.send({
+      from: 'Postbuddy <noreply@postbuddy.dk>',
+      to: ['jakob@postbuddy.dk', 'christian@postbuddy.dk'],
+      subject: `CSV sendt til printpartner for bruger - ${user.email}`,
+      html: `Der er blevet sendt en csv med ${profiles.length} rækker til printpartner for bruger med id ${user.id} og email ${user.email} og kampagne med id ${campaign_id}`,
+    });
     logtail.info(
-      `Successfully generated a csv and sent it to the print partner for user ${user_id} and campaign ${campaign_id}`,
+      `Successfully generated a csv and sent it to the print partner for user ${user.id} and campaign ${campaign_id}`,
     );
   } catch (error: any) {
     logtail.error(
-      `An error occured while trying to generate a csv and send it to the print partner for user ${user_id} and campaign ${campaign_id}`,
+      `An error occured while trying to generate a csv and send it to the print partner for user ${user.id} and campaign ${campaign_id}`,
     );
+    await resend.emails.send({
+      from: 'Postbuddy <noreply@postbuddy.dk>',
+      to: ['jakob@postbuddy.dk'],
+      subject: `Fejl ved generering af csv og afsendelse til printpartner for bruger - ${user.email}`,
+      html: `Der skete en fejl ved generering af csv og afsendelse til printpartner for bruger med id ${user.id} og email ${user.email} for kampagne med id ${campaign_id}`,
+    });
     throw new ErrorWithStatusCode(FailedToSendPdfToPrintPartnerError, 500);
   }
 
@@ -1411,11 +1467,17 @@ export async function sendLettersForNonDemoUser(
       },
     });
     logtail.info(
-      `Successfully updated profiles to sent for user ${user_id} and campaign ${campaign_id}`,
+      `Successfully updated profiles to sent for user ${user.id} and campaign ${campaign_id}`,
     );
   } catch (error: any) {
+    await resend.emails.send({
+      from: 'Postbuddy <noreply@postbuddy.dk>',
+      to: ['jakob@postbuddy.dk'],
+      subject: `Fejl ved opdatering af profiles til sent for bruger - ${user.email}`,
+      html: `Der skete en fejl ved opdatering af profiles til sent for bruger med id ${user.id} og email ${user.email} for kampagne med id ${campaign_id}`,
+    });
     logtail.error(
-      `An error occured while trying to update profiles to sent for user ${user_id} and campaign ${campaign_id}`,
+      `An error occured while trying to update profiles to sent for user ${user.id} and campaign ${campaign_id}`,
     );
     throw new ErrorWithStatusCode(FailedToUpdateProfilesToSentError, 500);
   }
@@ -1424,7 +1486,7 @@ export async function sendLettersForNonDemoUser(
 export async function sendLettersForDemoUser(
   profiles: Profile[],
   campaign_id: string,
-  user_id: string,
+  user: User
 ) {
   try {
     // Update profiles to sent
@@ -1439,10 +1501,20 @@ export async function sendLettersForDemoUser(
         letter_sent_at: new Date(),
       },
     });
+
+    await resend.emails.send({
+      from: 'Postbuddy <noreply@postbuddy.dk>',
+      to: ['jakob@postbuddy.dk'],
+      subject: `Demo bruger har sendt breve - ${user.email}`,
+      html: `Demo bruger med id ${user.id} har sendt ${profiles.length} breve for kampagne med id ${campaign_id}`,
+    });
   } catch (error: any) {
-    logtail.error(
-      `An error occured while trying to update profiles to sent for user ${user_id} and campaign ${campaign_id}`,
-    );
+    await resend.emails.send({
+      from: 'Postbuddy <noreply@postbuddy.dk>',
+      to: ['jakob@postbuddy.dk'],
+      subject: `Fejl ved opdatering af profiles til sent for bruger - ${user.id}`,
+      html: `Der skete en fejl ved opdatering af profiles til sent for bruger med id ${user.id} for kampagne med id ${campaign_id}`,
+    });
     throw new ErrorWithStatusCode(FailedToUpdateProfilesToSentError, 500);
   }
 }
@@ -1457,6 +1529,7 @@ export async function activateScheduledCampaigns() {
     },
   });
 
+  const activatedCampaigns = [];
   for (const campaign of campaigns) {
     // Check if campaign start date is in the past
     const startDate = new Date(campaign.start_date);
@@ -1481,7 +1554,19 @@ export async function activateScheduledCampaigns() {
       where: { id: campaign.id },
       data: { status: "active" },
     });
+
+    activatedCampaigns.push(campaign);
   }
+
+  // Send resend mail
+  await resend.emails.send({
+    from: 'Postbuddy <noreply@postbuddy.dk>',
+    to: ['jakob@postbuddy.dk'],
+    subject: `Scheduled campaigns activated`,
+    html: `The following campaigns have been activated: ${activatedCampaigns
+      .map((campaign) => campaign.id)
+      .join(", ")}`,
+  });
 
   logtail.info("Scheduled campaigns activated");
 }
@@ -1665,7 +1750,7 @@ export async function periodicallySendLetters() {
         try {
           if (!campaign.demo && !campaign.segment.demo) {
             await sendLettersForNonDemoUser(
-              campaign.user_id,
+              user,
               uniqueProfiles,
               campaign.design.scene,
               campaign.id,
@@ -1674,7 +1759,7 @@ export async function periodicallySendLetters() {
             await sendLettersForDemoUser(
               uniqueProfiles,
               campaign.id,
-              campaign.user_id,
+              user
             );
           }
         } catch (error: any) {
