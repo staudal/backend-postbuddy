@@ -498,7 +498,7 @@ function validateHeaders(headers: string[]) {
   ];
 
   const requiredHeaders = expectedHeaders.filter(
-    (header) => header !== "custom_variable",
+    (header) => header !== "custom_variable" && header !== "company",
   );
   return requiredHeaders.filter((header) => !headers.includes(header));
 }
