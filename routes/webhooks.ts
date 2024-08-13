@@ -37,6 +37,7 @@ router.post("/segment", async (req, res) => {
     city,
     country,
     custom_variable,
+    company,
   } = req.body;
   if (
     !segment_id ||
@@ -47,8 +48,9 @@ router.post("/segment", async (req, res) => {
     !zip ||
     !city ||
     !country
-  )
+  ) {
     return res.status(400).json({ error: MissingRequiredParametersError });
+  }
 
   const segment = await prisma.segment.findUnique({
     where: { id: segment_id },
@@ -88,6 +90,7 @@ router.post("/segment", async (req, res) => {
       segment_id: profile.segment_id,
       custom_variable: custom_variable || null,
       demo: segment.demo,
+      company: company || null,
     },
   });
 

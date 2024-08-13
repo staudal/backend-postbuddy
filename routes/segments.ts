@@ -494,6 +494,7 @@ function validateHeaders(headers: string[]) {
     "email",
     "country",
     "custom_variable",
+    "company",
   ];
 
   const requiredHeaders = expectedHeaders.filter(
@@ -589,6 +590,7 @@ function processRows(data: any) {
       city: row.city?.toLowerCase(),
       country: row.country?.toLowerCase(),
       custom_variable: row.custom_variable?.toLowerCase() || null,
+      company: row.company?.toLowerCase() || null,
     }))
     .filter((row: any) => {
       const { custom_variable, ...rest } = row;
@@ -618,6 +620,7 @@ function prepareProfiles(rows: any) {
     segment_id: "temp",
     in_robinson: false,
     custom_variable: row.custom_variable,
+    company: row.company,
   }));
 }
 
