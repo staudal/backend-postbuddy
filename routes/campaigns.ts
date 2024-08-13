@@ -340,21 +340,28 @@ router.post("/", authenticateToken, async (req, res) => {
       !segment_id ||
       !design_id ||
       !discountCodes
-    )
+    ) {
+      logtail.error("POST /campaigns: Missing required parameters", req.body);
       return res.status(400).json({ error: MissingRequiredParametersError });
+    }
 
     // Verify that segment exists
     const segment = await prisma.segment.findUnique({
       where: { id: segment_id, user_id },
     });
-    if (!segment) return res.status(404).json({ error: SegmentNotFoundError });
+    if (!segment) {
+      logtail.error("POST /campaigns: Segment not found", req.body);
+      return res.status(404).json({ error: SegmentNotFoundError });
+    }
 
     // Verify that design exists
     const design = await prisma.design.findUnique({
       where: { id: design_id },
     });
-    if (!design || !design.scene)
+    if (!design || !design.scene) {
+      logtail.error("POST /campaigns: Design not found", req.body);
       return res.status(404).json({ error: DesignNotFoundError });
+    }
 
     // Verify that user has an active subscription
     const user = await prisma.user.findUnique({
@@ -365,6 +372,7 @@ router.post("/", authenticateToken, async (req, res) => {
     });
 
     if (user?.subscription?.status !== "active") {
+      logtail.error("POST /campaigns: User has no active subscription", req.body);
       return res.status(400).json({ error: MissingSubscriptionError });
     }
 
@@ -387,12 +395,14 @@ router.post("/", authenticateToken, async (req, res) => {
       },
     });
 
+    logtail.info("POST /campaigns: Campaign created", campaign);
+
     return res.status(201).json({
       success: "Kampagnen er blevet oprettet og afventer afsendelse",
       campaign,
     });
   } catch (error: any) {
-    logtail.error(error + "POST /campaigns");
+    logtail.error("POST /campaigns: Error thrown", error);
     return res.status(500).json({ error: FailedToCreateCampaignError });
   }
 });
