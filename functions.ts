@@ -1558,15 +1558,17 @@ export async function activateScheduledCampaigns() {
     activatedCampaigns.push(campaign);
   }
 
-  // Send resend mail
-  await resend.emails.send({
-    from: 'Postbuddy <noreply@postbuddy.dk>',
-    to: ['jakob@postbuddy.dk'],
-    subject: `Scheduled campaigns activated`,
-    html: `The following campaigns have been activated: ${activatedCampaigns
-      .map((campaign) => campaign.id)
-      .join(", ")}`,
-  });
+  if (activatedCampaigns.length > 0) {
+    // Send resend mail
+    await resend.emails.send({
+      from: 'Postbuddy <noreply@postbuddy.dk>',
+      to: ['jakob@postbuddy.dk'],
+      subject: `Scheduled campaigns activated`,
+      html: `The following campaigns have been activated: ${activatedCampaigns
+        .map((campaign) => campaign.id)
+        .join(", ")}`,
+    });
+  }
 
   logtail.info("Scheduled campaigns activated");
 }
