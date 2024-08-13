@@ -677,7 +677,8 @@ export async function generateCsvAndSendToPrintPartner(
       const lastName = capitalizeWords(profile.last_name);
       const address = capitalizeWords(profile.address);
       const city = capitalizeWords(profile.city);
-      csvData += `"${firstName} ${lastName}","${address}","${profile.zip_code} ${city}","${profile.id.slice(-5)}"\n`;
+      const company = profile.company ? capitalizeWords(profile.company) : "";
+      csvData += `"${firstName} ${lastName}","${address}","${profile.zip_code} ${city}","${company}","${profile.id.slice(-5)}"\n`;
     });
     // Convert the CSV data to a Buffer
     const csvBuffer = Buffer.from(csvData);
