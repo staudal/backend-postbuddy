@@ -593,7 +593,7 @@ function processRows(data: any) {
       company: row.company?.toLowerCase() || null,
     }))
     .filter((row: any) => {
-      const { custom_variable, ...rest } = row;
+      const { custom_variable, company, ...rest } = row;
       return Object.values(rest).every(
         (cell) => cell !== "" && cell !== null && cell !== undefined,
       );
