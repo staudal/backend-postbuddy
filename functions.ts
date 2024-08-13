@@ -671,14 +671,19 @@ export async function generateCsvAndSendToPrintPartner(
     // Create folder if not exists
     await client.mkdir(`/files/til-distplus/${dateString}`, true);
 
-    let csvData = "fullname,address,zip_city,id\n"; // CSV headers
+    let csvData = "id,company,navn,adresse,postnummer_og_by\n"; // CSV headers
     profiles.forEach((profile) => {
       const firstName = capitalizeWords(profile.first_name);
       const lastName = capitalizeWords(profile.last_name);
       const address = capitalizeWords(profile.address);
       const city = capitalizeWords(profile.city);
       const company = profile.company ? capitalizeWords(profile.company) : "";
-      csvData += `"${firstName} ${lastName}","${address}","${profile.zip_code} ${city}","${company}","${profile.id.slice(-5)}"\n`;
+
+      if (company === "") {
+        csvData += `"${profile.id.slice(-5)}","","${firstName} ${lastName}","${address}","${profile.zip_code} ${city}"\n`;
+      } else {
+        csvData += `"${profile.id.slice(-5)}","${company}","Att. ${firstName} ${lastName}","${address}","${profile.zip_code} ${city}"\n`;
+      }
     });
     // Convert the CSV data to a Buffer
     const csvBuffer = Buffer.from(csvData);

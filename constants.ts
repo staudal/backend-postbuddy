@@ -24,6 +24,7 @@ export const testProfile: Profile = {
   klaviyo_id: 'test',
   letter_sent: false,
   letter_sent_at: null,
+  company: null,
 }
 export const pricePerLetter = 7.5
 export const JWT_EXPIRATION_TIME = '1d';
