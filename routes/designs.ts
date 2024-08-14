@@ -13,6 +13,7 @@ import { Profile } from "@prisma/client";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import multer from "multer";
 import { authenticateToken } from "./middleware";
+import { testProfile } from "../constants";
 
 const router = Router();
 
@@ -124,26 +125,7 @@ router.get("/export/:id", async (req, res) => {
       return res.status(404).json({ error: SceneNotFoundError });
     }
 
-    const dummyProfile: Profile = {
-      first_name: "John",
-      last_name: "Doe",
-      created_at: new Date(),
-      email: "john@doe.dk",
-      address: "Testvej 1",
-      city: "Testby",
-      zip_code: "1234",
-      in_robinson: false,
-      country: "Danmark",
-      custom_variable: "Random data",
-      demo: true,
-      klaviyo_id: "1234",
-      letter_sent: false,
-      letter_sent_at: null,
-      segment_id: "1234",
-      id: "12345678",
-    };
-
-    const pdf = await generatePdf([dummyProfile], design.scene);
+    const pdf = await generatePdf([testProfile], design.scene);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", "attachment; filename=export.pdf");
     res.end(pdf, "binary");
