@@ -493,7 +493,7 @@ router.post("/test-letter", authenticateToken, async (req, res) => {
     // Generate pdf
     let pdf;
     try {
-      pdf = await generatePdf([testProfile], design.scene);
+      pdf = await generatePdf([testProfile], design.scene, design.format);
     } catch (error: any) {
       logtail.error(
         `An error occured while trying to generate a pdf for a test letter for user ${user_id}`,

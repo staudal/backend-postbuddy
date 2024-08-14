@@ -1,4 +1,4 @@
-import { Campaign, PrismaClient, Profile, User } from "@prisma/client";
+import { Campaign, Design, PrismaClient, Profile, User } from "@prisma/client";
 import { KlaviyoSegmentProfile, Order, ProfileToAdd } from "./types";
 import { Order as PrismaOrder } from "@prisma/client";
 import Stripe from "stripe";
@@ -595,7 +595,7 @@ export function generateIdText(
   }
 }
 
-export async function generatePdf(profiles: Profile[], designBlob: string) {
+export async function generatePdf(profiles: Profile[], designBlob: string, format: string) {
   try {
     const mergedPdf = await PDFDocument.create();
     await CreativeEngine.init(config).then(async (engine) => {
@@ -605,7 +605,9 @@ export async function generatePdf(profiles: Profile[], designBlob: string) {
       const pageHeight = engine.block.getHeight(pages[0]);
       const idText = engine.block.create("text");
       generateIdBlock(idText, engine, pageWidth, pageHeight, pages);
-      generateBleedLines(engine, pages, pageWidth, pageHeight);
+      if (format === "a5-horizontal" || format === "a5-vertical") {
+        generateBleedLines(engine, pages, pageWidth, pageHeight)
+      }
       for (const profile of profiles) {
         updateVariables(engine, profile);
         generateIdText(engine, profile, idText, pages);
@@ -710,7 +712,7 @@ export function capitalizeWords(str: string) {
 export async function sendLettersForNonDemoUser(
   user: User,
   profiles: Profile[],
-  designBlob: string,
+  design: Design,
   campaign_id: string,
 ) {
   // Try to bill the user for the letters sent
@@ -737,10 +739,10 @@ export async function sendLettersForNonDemoUser(
   // Generate pdf
   let pdf;
   try {
-    logtail.info(
-      `Generating a pdf for user ${user.id} and campaign ${campaign_id}`,
-    );
-    pdf = await generatePdf(profiles, designBlob);
+    if (!design.scene) {
+      throw new ErrorWithStatusCode("Design blob is missing", 400);
+    }
+    pdf = await generatePdf(profiles, design.scene, design.format);
 
     // Send resend mail
     await resend.emails.send({
@@ -1125,7 +1127,7 @@ export async function periodicallySendLetters() {
             await sendLettersForNonDemoUser(
               user,
               uniqueProfiles,
-              campaign.design.scene,
+              campaign.design,
               campaign.id,
             );
           } else {

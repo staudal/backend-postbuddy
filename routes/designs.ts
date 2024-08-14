@@ -129,7 +129,7 @@ router.get("/export/:id", async (req, res) => {
       return res.status(403).json({ error: InsufficientRightsError });
     }
 
-    const pdf = await generatePdf([testProfile], design.scene);
+    const pdf = await generatePdf([testProfile], design.scene, design.format);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", "attachment; filename=export.pdf");
     res.end(pdf, "binary");
