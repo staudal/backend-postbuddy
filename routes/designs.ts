@@ -124,10 +124,6 @@ router.get("/export/:id", async (req, res) => {
       return res.status(404).json({ error: SceneNotFoundError });
     }
 
-    if (design.user_id !== req.body.user_id) {
-      return res.status(403).json({ error: InsufficientRightsError });
-    }
-
     const dummyProfile: Profile = {
       first_name: "John",
       last_name: "Doe",
