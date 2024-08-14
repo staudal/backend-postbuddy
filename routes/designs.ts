@@ -125,10 +125,6 @@ router.get("/export/:id", async (req, res) => {
       return res.status(404).json({ error: SceneNotFoundError });
     }
 
-    if (design.user_id !== req.body.user_id) {
-      return res.status(403).json({ error: InsufficientRightsError });
-    }
-
     const pdf = await generatePdf([testProfile], design.scene, design.format);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", "attachment; filename=export.pdf");
