@@ -52,7 +52,7 @@ router.post('/letters', async (req, res) => {
   const date = new Date();
   const dateString = `${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
 
-  const pdf = await generatePdf(profiles, design.scene);
+  const pdf = await generatePdf(profiles, design.scene, design.format);
   await sendPdfToPrintPartner(pdf, campaign.id, dateString)
   await generateCsvAndSendToPrintPartner(profiles, campaign.id, dateString);
   await billUserForLettersSent(profiles, user.id);
