@@ -954,11 +954,23 @@ export async function updateKlaviyoProfiles() {
         },
       },
     },
+    include: {
+      integrations: true,
+    }
   });
 
   try {
     for (const user of users) {
       const isValid = await validateKlaviyoApiKeyForUser(user);
+      const klaviyoIntegration = user.integrations.find(
+        (integration) => integration.type === "klaviyo"
+      );
+      const klaviyoApiKey = klaviyoIntegration?.klaviyo_api_key;
+
+      if (!klaviyoApiKey) {
+        logtail.error(`User with id ${user.id} does not have a Klaviyo API key`);
+        continue;
+      }
 
       if (!isValid) {
         logtail.error(`User with id ${user.id} has an invalid Klaviyo API key`);
@@ -982,9 +994,10 @@ export async function updateKlaviyoProfiles() {
       // Loop through each campaign and get the new profiles from Klaviyo
       const profilesToAdd: ProfileToAdd[] = [];
       for (const campaign of campaigns) {
-        const klaviyoSegmentProfiles = await getKlaviyoSegmentProfiles(
-          campaign.segment.klaviyo_id,
-          campaign.user_id,
+        const klaviyoSegmentProfiles = await getKlaviyoSegmentProfilesBySegmentId(
+          campaign.segment.id,
+          klaviyoApiKey,
+          campaign.segment.klaviyo_custom_variable || undefined,
         );
         const existingSegmentProfiles = await prisma.profile.findMany({
           where: { segment_id: campaign.segment_id },
@@ -1008,9 +1021,7 @@ export async function updateKlaviyoProfiles() {
               klaviyoSegmentProfile.attributes.location.country.toLowerCase(),
             segment_id: campaign.segment_id,
             in_robinson: false,
-            custom_variable:
-              klaviyoSegmentProfile.attributes.properties.custom_variable ||
-              null,
+            custom_variable: campaign.segment.klaviyo_custom_variable ? klaviyoSegmentProfile.attributes.properties[campaign.segment.klaviyo_custom_variable] : null,
             demo: campaign.segment.demo,
           }),
         );
@@ -1175,6 +1186,7 @@ export function generateUniqueFiveDigitId() {
 export async function getKlaviyoSegmentProfilesBySegmentId(
   segmentId: string,
   klaviyoApiKey: string,
+  custom_variable?: string,
 ) {
   const url = `https://a.klaviyo.com/api/segments/${segmentId}/profiles/?page[size]=100`;
   const options = {
@@ -1186,8 +1198,6 @@ export async function getKlaviyoSegmentProfilesBySegmentId(
   };
 
   let allProfiles: KlaviyoSegmentProfile[] = [];
-  let skippedProfiles: any[] = [];
-  let missingFields: { [key: string]: number } = {};
   let nextUrl: string | null = url;
 
   while (nextUrl) {
@@ -1196,8 +1206,11 @@ export async function getKlaviyoSegmentProfilesBySegmentId(
 
     if (data.data) {
       data.data.forEach((profile: any) => {
-        const { first_name, last_name, email, location } = profile.attributes;
+        const { first_name, last_name, email, location, properties } = profile.attributes;
         const { address1, city, zip, country } = location || {};
+
+        // Only extract the custom variable if it's provided
+        const customValue = custom_variable ? properties[custom_variable] : undefined;
 
         if (
           first_name &&
@@ -1206,62 +1219,41 @@ export async function getKlaviyoSegmentProfilesBySegmentId(
           address1 &&
           city &&
           zip &&
-          country &&
-          [
-            "denmark",
-            "danmark",
-            "sweden",
-            "sverige",
-            "germany",
-            "tyskland",
-          ].includes(country.toLowerCase())
+          (
+            !custom_variable ||
+            (customValue !== undefined && customValue !== null && customValue !== "")
+          )
         ) {
-          allProfiles.push(profile);
-        } else {
-          if (!first_name)
-            missingFields["first_name"] =
-              (missingFields["first_name"] || 0) + 1;
-          if (!last_name)
-            missingFields["last_name"] = (missingFields["last_name"] || 0) + 1;
-          if (!address1)
-            missingFields["address1"] = (missingFields["address1"] || 0) + 1;
-          if (!city) missingFields["city"] = (missingFields["city"] || 0) + 1;
-          if (!zip) missingFields["zip"] = (missingFields["zip"] || 0) + 1;
-          if (!country)
-            missingFields["country"] = (missingFields["country"] || 0) + 1;
-          // Skip profiles where country is not Denmark, Danmark, Sweden, Sverige, Germany or Tyskland
-          if (
-            country &&
-            ![
-              "denmark",
-              "danmark",
-              "sweden",
-              "sverige",
-              "germany",
-              "tyskland",
-            ].includes(country.toLowerCase())
-          ) {
-            missingFields["country"] = (missingFields["country"] || 0) + 1;
-          }
-          skippedProfiles.push(profile);
+          allProfiles.push({
+            id: profile.id,
+            attributes: {
+              first_name,
+              last_name,
+              email,
+              location: {
+                address1,
+                city,
+                zip,
+                country,
+              },
+              properties: {
+                ...properties,
+                ...(custom_variable && { [custom_variable]: customValue }),
+              },
+            },
+          });
         }
       });
     }
 
-    nextUrl = data.links?.next || null;
-
-    // Respect the rate limit
-    await new Promise((resolve) => setTimeout(resolve, 1000 / 75));
+    // Check if there's a next page of profiles
+    nextUrl = data.links && data.links.next ? data.links.next : null;
   }
 
-  let reason = "";
-  for (const field in missingFields) {
-    reason += `${field} (x${missingFields[field]}), `;
-  }
-  reason = reason.slice(0, -2); // remove trailing comma and space
-
-  return { validProfiles: allProfiles, skippedProfiles, reason };
+  return allProfiles;
 }
+
+
 
 export function detectDelimiter(line: string): string {
   const delimiters = [",", ";", "\t"];

@@ -646,7 +646,7 @@ export interface KlaviyoSegmentProfile {
       zip: string;
     };
     properties: {
-      custom_variable: string;
+      [key: string]: any;
     };
   };
 }

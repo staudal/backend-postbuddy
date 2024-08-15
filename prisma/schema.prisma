@@ -143,7 +143,6 @@ model Profile {
   created_at      DateTime       @default(now()) @db.Timestamptz(6)
   first_name      String
   last_name       String
-  company         String?
   address         String
   city            String
   zip_code        String
@@ -156,6 +155,7 @@ model Profile {
   country         String         @default("denmark")
   custom_variable String?
   demo            Boolean        @default(false)
+  company         String?
   orders          OrderProfile[]
   segment         Segment        @relation(fields: [segment_id], references: [id], onDelete: Cascade)
 
@@ -168,16 +168,17 @@ model Profile {
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Segment {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  created_at DateTime  @default(now()) @db.Timestamptz(6)
-  name       String
-  type       String
-  user_id    String    @db.Uuid
-  klaviyo_id String?
-  demo       Boolean   @default(false)
-  campaign   Campaign?
-  profiles   Profile[]
-  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at              DateTime  @default(now()) @db.Timestamptz(6)
+  name                    String
+  type                    String
+  user_id                 String    @db.Uuid
+  klaviyo_id              String?
+  demo                    Boolean   @default(false)
+  klaviyo_custom_variable String?
+  campaign                Campaign?
+  profiles                Profile[]
+  user                    User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([user_id])
   @@index([created_at])

@@ -290,7 +290,7 @@ router.put("/profile/:id", authenticateToken, async (req, res) => {
 // USED FOR SEGMENTS PAGE (to import a segment from Klaviyo)
 router.post("/klaviyo", async (req, res) => {
   try {
-    const { user_id, selected_segment } = req.body;
+    const { user_id, selected_segment, custom_variable } = req.body;
 
     if (!user_id || !selected_segment) {
       return res.status(400).json({ error: MissingRequiredParametersError });
@@ -317,9 +317,10 @@ router.post("/klaviyo", async (req, res) => {
     const klaviyoSegmentProfiles = await getKlaviyoSegmentProfilesBySegmentId(
       selected_segment.id,
       integration.klaviyo_api_key,
+      custom_variable,
     );
 
-    let profilesToAdd = klaviyoSegmentProfiles.validProfiles.map((profile) => ({
+    let profilesToAdd = klaviyoSegmentProfiles.map((profile) => ({
       klaviyo_id: profile.id,
       first_name: profile.attributes.first_name,
       last_name: profile.attributes.last_name,
@@ -330,8 +331,9 @@ router.post("/klaviyo", async (req, res) => {
       country: profile.attributes.location.country,
       segment_id: "temp", // Set to temporary value
       in_robinson: false,
-      custom_variable: profile.attributes.properties.custom_variable || null,
+      custom_variable: custom_variable ? profile.attributes.properties[custom_variable] : null,
     }));
+
 
     // Step 2: Check profiles against Robinson list
     const profilesInRobinson = await returnProfilesInRobinson(profilesToAdd);
@@ -353,6 +355,7 @@ router.post("/klaviyo", async (req, res) => {
           user_id: user.id,
           klaviyo_id: selected_segment.id,
           demo: user.demo,
+          klaviyo_custom_variable: custom_variable || null,
         },
       });
 
