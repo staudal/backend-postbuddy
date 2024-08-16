@@ -12,7 +12,7 @@ import {
   UserNotFoundError,
 } from "../errors";
 import { SegmentDeletedSuccess, SegmentUpdatedSuccess } from "../success";
-import { Profile } from "@prisma/client";
+import { Profile, Segment } from "@prisma/client";
 import {
   generateUniqueFiveDigitId,
   getKlaviyoSegmentProfilesBySegmentId,
@@ -734,10 +734,6 @@ router.get("/export/:id", async (req, res) => {
     return res.status(404).json({ error: SegmentNotFoundError });
   }
 
-  if (segment.user_id !== req.body.user_id) {
-    return res.status(403).json({ error: InsufficientRightsError });
-  }
-
   try {
     const { user_id } = req.body;
     const { id } = req.params;
@@ -745,15 +741,37 @@ router.get("/export/:id", async (req, res) => {
       return res.status(400).json({ error: MissingRequiredParametersError });
     }
 
-    const segment = await prisma.segment.findUnique({
-      where: {
-        id,
-        user_id,
-      },
-      include: {
-        profiles: true,
-      },
+    const user = await prisma.user.findUnique({
+      where: { id: user_id },
     });
+    if (!user) {
+      return res.status(404).json({ error: UserNotFoundError });
+    }
+
+    const isAdmin = user.role === "admin";
+
+    let segment;
+    if (isAdmin) {
+      segment = await prisma.segment.findUnique({
+        where: {
+          id,
+        },
+        include: {
+          profiles: true,
+        },
+      });
+    } else {
+      segment = await prisma.segment.findUnique({
+        where: {
+          id,
+          user_id,
+        },
+        include: {
+          profiles: true,
+        },
+      });
+    }
+
     if (!segment) {
       return res.status(404).json({ error: SegmentNotFoundError });
     }
@@ -772,29 +790,34 @@ router.get("/export/:id", async (req, res) => {
     ];
     let csvContent = headers.join(",") + "\n";
 
+    const normalizeString = (str: string | null): string => {
+      if (str === null) {
+        return ''; // Or any default value you want for null, e.g., 'N/A'
+      }
+      return str.trim().replace(/\s+/g, ' ');
+    };
+
+
     // Create CSV content
     segment.profiles.forEach((profile: Profile) => {
       const row = [
         generateUniqueFiveDigitId(),
-        `"${profile.first_name}"`,
-        `"${profile.last_name}"`,
-        `"${profile.email}"`,
-        `"${profile.address}"`,
-        `"${profile.city}"`,
-        `"${profile.country}"`,
-        `"${profile.zip_code}"`,
+        `"${normalizeString(profile.first_name)}"`,
+        `"${normalizeString(profile.last_name)}"`,
+        `"${normalizeString(profile.email)}"`,
+        `"${normalizeString(profile.address)}"`,
+        `"${normalizeString(profile.city)}"`,
+        `"${normalizeString(profile.country)}"`,
+        `"${normalizeString(profile.zip_code)}"`,
         `"${profile.in_robinson ? "Ja" : "Nej"}"`,
-        `"${profile.custom_variable}"`,
+        `"${normalizeString(profile.custom_variable)}"`,
       ];
       csvContent += row.join(",") + "\n";
     });
 
     // Return CSV
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename=${segment.name}.csv`,
-    );
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename=${segment.name}.csv`);
     res.send(csvContent);
   } catch (error) {
     logtail.error(error + "GET /segments/export/:id");
