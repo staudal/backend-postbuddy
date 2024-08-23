@@ -6,10 +6,8 @@ import {
   MissingRequiredParametersError,
   UserNotFoundError,
 } from "../errors";
-import { extractQueryWithoutHMAC, validateHMAC } from "../functions";
 import { authenticateToken } from "./middleware";
 import { API_URL, supabase, WEB_URL } from "../constants";
-import { Resend } from "resend";
 
 const router = Router();
 
@@ -96,6 +94,22 @@ router.get("/shopify/disconnect", authenticateToken, async (req, res) => {
       where: {
         user_id: user.id,
         type: "shopify",
+      },
+    });
+
+    // Delete all orderProfiles associated with the user's orders
+    await prisma.orderProfile.deleteMany({
+      where: {
+        order: {
+          user_id: user.id,
+        },
+      },
+    });
+
+    // Delete all orders
+    await prisma.order.deleteMany({
+      where: {
+        user_id: user.id,
       },
     });
 
@@ -203,6 +217,107 @@ router.get("/klaviyo/disconnect", authenticateToken, async (req, res) => {
       .json({ success: "Klaviyo-integrationen blev slettet" });
   } catch (error: any) {
     logtail.error(error + "GET /klaviyo/disconnect");
+    return res.status(500).json({ error: InternalServerError });
+  }
+});
+
+router.post("/woocommerce/connect", authenticateToken, async (req, res) => {
+  try {
+    const { user_id, shop_url } = req.body;
+    if (!user_id || !shop_url) {
+      return res.status(400).json({ error: MissingRequiredParametersError });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: user_id },
+    });
+    if (!user) {
+      return res.status(404).json({ error: UserNotFoundError });
+    }
+
+    const integration = await prisma.integration.findFirst({
+      where: {
+        user_id: user.id,
+        type: "woocommerce",
+      },
+    });
+
+    if (integration) {
+      return res
+        .status(400)
+        .json({ error: "Du har allerede integreret med WooCommerce" });
+    }
+
+    // Ensure shop_url starts with http:// or https://
+    if (!/^https?:\/\//i.test(shop_url)) {
+      return res.status(400).json({ error: "Ugyldig URL - mangler http:// eller https://" });
+    }
+
+    const store_url = new URL(shop_url);
+    if (!store_url.hostname) {
+      return res.status(400).json({ error: "Ugyldig URL - mangler domæne" });
+    }
+
+    const endpoint = "/wc-auth/v1/authorize";
+    const params = {
+      app_name: "Postbuddy",
+      scope: "read",
+      user_id: user_id,
+      return_url: `${WEB_URL}/integrations`,
+      callback_url: `https://rkjrflfwfqhhpwafimbe.supabase.co/functions/v1/woocommerce-callback`,
+    }
+
+    const url = new URL(store_url.origin);
+    url.pathname = endpoint;
+    url.search = new URLSearchParams(params).toString();
+
+    return res.status(200).json({ url: url.toString() });
+  } catch (error: any) {
+    console.error(error);
+    logtail.error(error + "POST /woocommerce/connect");
+    return res.status(500).json({ error: InternalServerError });
+  }
+});
+
+router.post("/woocommerce/disconnect", authenticateToken, async (req, res) => {
+  try {
+    const { user_id } = req.body;
+    if (!user_id)
+      return res.status(400).json({ error: MissingRequiredParametersError });
+
+    const user = await prisma.user.findUnique({
+      where: { id: user_id },
+    });
+    if (!user) return res.status(404).json({ error: UserNotFoundError });
+
+    await prisma.integration.deleteMany({
+      where: {
+        user_id: user.id,
+        type: "woocommerce",
+      },
+    });
+
+    // Delete all orderProfiles associated with the user's orders
+    await prisma.orderProfile.deleteMany({
+      where: {
+        order: {
+          user_id: user.id,
+        },
+      },
+    });
+
+    // Delete all orders
+    await prisma.order.deleteMany({
+      where: {
+        user_id: user.id,
+      },
+    });
+
+    return res
+      .status(200)
+      .json({ success: "WooCommerce-integrationen blev slettet" });
+  } catch (error: any) {
+    logtail.error(error + "POST /woocommerce/disconnect");
     return res.status(500).json({ error: InternalServerError });
   }
 });
